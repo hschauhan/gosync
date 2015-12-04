@@ -20,12 +20,13 @@
 import sys, os, wx, GoSyncController, GoSyncModel
 from os.path import expanduser, dirname, relpath
 from GoSyncController import GoSyncController
+from defines import *
 
 # Add the current path to gosync path.
-sys.path.insert(0, expanduser(dirname(relpath(__file__))))
+sys.path.insert(0, APP_PATH)
 
 def main():
-    os.chdir(expanduser(dirname(relpath(__file__))))
+    os.chdir(APP_PATH)
     app = wx.PySimpleApp()
     GoSyncController()
     app.MainLoop()
