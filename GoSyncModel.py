@@ -45,6 +45,9 @@ class GoSyncModel(object):
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
 
+        if not os.path.exists(self.mirror_directory):
+            os.mkdir(self.mirror_directory, 0755)
+
         if not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
             sfile.write("save_credentials: True")
