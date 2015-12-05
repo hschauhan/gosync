@@ -18,7 +18,7 @@
 
 import os,sys
 
-TRAY_TOOLTIP = 'GoSync - A Google Drive Client'
+TRAY_TOOLTIP = 'GoSync - A Google Drive Client for Linux'
 TRAY_ICON = 'resources/GoSyncIcon.png'
 APP_NAME = 'GoSync'
 APP_VERSION = '0.01'
