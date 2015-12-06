@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import sys, os, ntpath, defines, threading, hashlib, time
+import sys, os, wx, ntpath, defines, threading, hashlib, time
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from os.path import expanduser
@@ -306,15 +306,12 @@ class GoSyncModel(object):
     def run(self):
         while True:
             if not self.cancelRunningSync:
-                print "Will start the sync now...\n"
                 self.sync_lock.acquire()
                 self.SyncDirectory('root', '')
                 self.sync_lock.release()
-                print "Sync Complete\n"
-            time.sleep(5)
+            time.sleep(10)
 
     def StartSync(self):
-        print "Start the sync\n"
         self.cancelRunningSync = False
 
     def StopSync(self):
