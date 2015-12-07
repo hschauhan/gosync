@@ -100,7 +100,7 @@ class GoSyncModel(object):
             self.is_logged_in = False
 
     def DriveInfo(self):
-        return self.authToken.AboutDrive()
+        return self.authToken.service.about().get().execute()
 
     def PathLeaf(self, path):
         head, tail = ntpath.split(path)
