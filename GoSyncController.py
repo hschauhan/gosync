@@ -16,18 +16,81 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+import wx, os
 import sys, os, wx, ntpath, defines, threading, math
 from GoSyncModel import GoSyncModel
-#from defines import TRAY_ICON, TRAY_TOOLTIP, APP_NAME, APP_VERSION, APP_DESCRIPTION
 from defines import *
 from threading import Timer
-from GoSyncPreferences import GoSyncPreferenceDialog
+from DriveUsageBox import DriveUsageBox
 
-class GoSyncController(wx.TaskBarIcon):
+mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX)
+
+class PageAccountSettings(wx.Panel):
+    def __init__(self, parent):
+        wx.Panel.__init__(self, parent)
+
+        font = wx.Font(11, wx.SWISS, wx.NORMAL, wx.NORMAL)
+        headerFont = wx.Font(12, wx.SWISS, wx.NORMAL, wx.BOLD)
+
+        accountText = wx.StaticText(self, wx.ID_ANY, "Account")
+        accountText.SetFont(headerFont)
+
+        container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,10), size=(685, 150))
+
+        self.driveUsageBar = DriveUsageBox(container_panel, 16106127360, -1, bar_position=(50,90))
+        self.driveUsageBar.SetMoviesUsage(25)
+        self.driveUsageBar.SetDocumentUsage(25)
+        self.driveUsageBar.SetOthersUsage(25)
+        self.driveUsageBar.SetAudioUsage(0)
+        self.driveUsageBar.RePaint()
+
+        settings_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5, 170), size=(685, 500))
+        syncOptionsText = wx.StaticText(self, wx.ID_ANY, "Sync Options")
+        syncOptionsText.SetFont(headerFont)
+        localSyncDirLabel = wx.StaticText(settings_panel, wx.ID_ANY, "Local Folder:")
+        self.userHome = "%s/gosync" % os.getenv("HOME")
+        self.localSyncDirText = wx.TextCtrl(settings_panel, wx.ID_ANY, self.userHome)
+        localSyncDirLabel.SetFont(font)
+        self.localSyncDirBrowseBtn = wx.Button(settings_panel, wx.ID_ANY, 'Browse')
+        self.localSyncDirBrowseBtn.Bind(wx.EVT_BUTTON, self.onLocalBrowse)
+
+        serverSyncDirLabel = wx.StaticText(settings_panel, wx.ID_ANY, "Server Folder(s):")
+        self.serverSyncDirText = wx.TextCtrl(settings_panel, wx.ID_ANY, 'root')
+        serverSyncDirLabel.SetFont(font)
+        self.serverSyncDirBrowseBtn = wx.Button(settings_panel, wx.ID_ANY, 'Browse')
+        #self.serverSyncDirBrowseBtn.Bind(wx.EVT_BUTTON, self.onServerBrowse)
+
+        mainsizer = wx.BoxSizer(wx.VERTICAL)
+
+        prefSizer = wx.FlexGridSizer(cols=3, hgap=5, vgap=10)
+        prefSizer.AddGrowableCol(1)
+
+        prefSizer.Add(localSyncDirLabel, 0, wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        prefSizer.Add(self.localSyncDirText, 0, wx.EXPAND)
+        prefSizer.Add(self.localSyncDirBrowseBtn, 0)
+
+        prefSizer.Add(serverSyncDirLabel, 0, wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
+        prefSizer.Add(self.serverSyncDirText, 0, wx.EXPAND)
+        prefSizer.Add(self.serverSyncDirBrowseBtn, 0)
+
+        mainsizer.Add(accountText, 0, wx.ALL|wx.EXPAND, 5)
+        mainsizer.Add(container_panel, 0, wx.ALL|wx.EXPAND, 5)
+        mainsizer.Add(syncOptionsText, 0, wx.ALL|wx.EXPAND, 10)
+        settings_panel.SetSizerAndFit(prefSizer)
+        mainsizer.Add(settings_panel, 0, wx.ALL|wx.EXPAND, 5)
+        self.SetSizerAndFit(mainsizer)
+
+    def onLocalBrowse(self, event):
+        browseDialog = wx.DirDialog(None, "Choose a directory:",
+                                    style = wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
+        if browseDialog.ShowModal() == wx.ID_OK:
+            self.localSyncDirText.SetValue(browseDialog.GetPath())
+        browseDialog.Destroy()
+
+class GoSyncController(wx.Frame):
     def __init__(self):
-        super(GoSyncController, self).__init__()
-        self.SetIcon(wx.IconFromBitmap(wx.Bitmap(TRAY_ICON)), TRAY_TOOLTIP)
-        self.Bind(wx.EVT_TASKBAR_LEFT_DOWN, self.OnLeftDown)
+        wx.Frame.__init__(self, None, title="GoSync", size=(700,700), style=mainWindowStyle)
+
         try:
             self.sync_model = GoSyncModel()
         except:
@@ -36,48 +99,58 @@ class GoSyncController(wx.TaskBarIcon):
             res = dial.ShowModal()
             sys.exit(1)
 
-    def CreateMenuItem(self, menu, label, func, icon=None):
-        item = wx.MenuItem(menu, -1, label)
-        if icon:
-            item.SetBitmap(wx.Bitmap(icon))
-        menu.Bind(wx.EVT_MENU, func, id=item.GetId())
-        menu.AppendItem(item)
-        return item
+        self.aboutdrive = self.sync_model.DriveInfo()
 
-    def CreatePopupMenu(self):
+        title_string = "GoSync -- Logged In as %s" % self.aboutdrive['name']
+        self.SetTitle(title_string)
+        appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
+        self.SetIcon(appIcon)
+        menuBar = wx.MenuBar()
         menu = wx.Menu()
-        aboutdrive = self.sync_model.DriveInfo()
-        driveTotalSpace = float(aboutdrive['quotaBytesTotal'])
-        driveUsedSpace = float(aboutdrive['quotaBytesUsed'])
-        usage_string = "%s/%s" % (self.FileSizeHumanize(driveUsedSpace), self.FileSizeHumanize(driveTotalSpace))
-        self.CreateMenuItem(menu, aboutdrive['name'], self.OnLeftDown, 'resources/user.png')
-        self.CreateMenuItem(menu, usage_string, self.OnLeftDown, 'resources/usage.png')
 
         if self.sync_model.IsSyncEnabled():
             self.CreateMenuItem(menu, '&Stop Background Sync', self.OnStopSync, 'resources/sync-menu.png')
         else:
             self.CreateMenuItem(menu, '&Start Background Sync', self.OnSyncNow, 'resources/sync-menu.png')
         menu.AppendSeparator()
-        self.CreateMenuItem(menu, 'S&ettings', self.OnPreferences, 'resources/settings.png')
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, 'resources/info.png')
         self.CreateMenuItem(menu, 'E&xit', self.OnExit, 'resources/exit.png')
-        return menu
 
-    def FileSizeHumanize(self, size):
-        size = abs(size)
-        if (size==0):
-            return "0B"
-        units = ['B','KiB','MiB','GiB','TiB','PiB','EiB','ZiB','YiB']
-        p = math.floor(math.log(size, 2)/10)
-        return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
+        menuBar.Append(menu, '&File')
 
-    def OnPreferences(self, event):
-        prefPane = GoSyncPreferenceDialog()
-        prefPane.ShowModal()
-        prefPane.Destroy()
+        self.SetMenuBar(menuBar)
 
-    def OnLeftDown(self, event):
-        return
+        # Here we create a panel and a notebook on the panel
+        p = wx.Panel(self)
+        nb = wx.Notebook(p)
+
+        # create the page windows as children of the notebook
+        accountSettingsPage = PageAccountSettings(nb)
+
+        # add the pages to the notebook with the label to show on the tab
+        nb.AddPage(accountSettingsPage, "Account && Options")
+
+        self.CreateStatusBar(style=0)
+        self.SetStatusText("Welcome to GoSync!")
+
+        self.sync_model.SetSyncStatusListener(self)
+
+        # finally, put the notebook in a sizer for the panel to manage
+        # the layout
+        sizer = wx.BoxSizer()
+        sizer.Add(nb, 1, wx.EXPAND)
+        p.SetSizer(sizer)
+
+    def OnSyncUpdate(self, sync_type, msg):
+        self.SetStatusText(msg)
+
+    def CreateMenuItem(self, menu, label, func, icon=None):
+        item = wx.MenuItem(menu, -1, label)
+        if icon:
+            item.SetBitmap(wx.Bitmap(icon))
+        self.Bind(wx.EVT_MENU, func, id=item.GetId())
+        menu.AppendItem(item)
+        return item
 
     def OnExit(self, event):
         dial = wx.MessageDialog(None, 'GoSync will stop syncing files until restarted.\nAre you sure to quit?\n',
@@ -95,8 +168,9 @@ class GoSyncController(wx.TaskBarIcon):
 
     def OnAbout(self, evt):
         """About GoSync"""
+        print "about dialog box"
         about = wx.AboutDialogInfo()
-        about.SetIcon(wx.Icon(TRAY_ICON, wx.BITMAP_TYPE_PNG))
+        about.SetIcon(wx.Icon(ABOUT_ICON, wx.BITMAP_TYPE_PNG))
         about.SetName(APP_NAME)
         about.SetVersion(APP_VERSION)
         about.SetDescription(APP_DESCRIPTION)
@@ -104,4 +178,5 @@ class GoSyncController(wx.TaskBarIcon):
         about.SetWebSite(APP_WEBSITE)
         about.SetLicense(APP_LICENSE)
         about.AddDeveloper(APP_DEVELOPER)
+        about.AddArtist(APP_DEVELOPER)
         wx.AboutBox(about)
