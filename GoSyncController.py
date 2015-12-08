@@ -30,12 +30,12 @@ class PageAccountSettings(wx.Panel):
         wx.Panel.__init__(self, parent)
 
         font = wx.Font(11, wx.SWISS, wx.NORMAL, wx.NORMAL)
-        headerFont = wx.Font(12, wx.SWISS, wx.NORMAL, wx.BOLD)
+        headerFont = wx.Font(11.5, wx.SWISS, wx.NORMAL, wx.BOLD)
 
-        accountText = wx.StaticText(self, wx.ID_ANY, "Account")
+        accountText = wx.StaticText(self, wx.ID_ANY, "Account", pos=(0,0))
         accountText.SetFont(headerFont)
 
-        container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,10), size=(685, 150))
+        container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,1), size=(685, 150))
 
         self.driveUsageBar = DriveUsageBox(container_panel, 16106127360, -1, bar_position=(50,90))
         self.driveUsageBar.SetMoviesUsage(25)
@@ -44,8 +44,8 @@ class PageAccountSettings(wx.Panel):
         self.driveUsageBar.SetAudioUsage(0)
         self.driveUsageBar.RePaint()
 
-        settings_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5, 170), size=(685, 500))
-        syncOptionsText = wx.StaticText(self, wx.ID_ANY, "Sync Options")
+        settings_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5, 100), size=(600, 500))
+        syncOptionsText = wx.StaticText(self, wx.ID_ANY, "Sync Options", pos=(0, 100))
         syncOptionsText.SetFont(headerFont)
         localSyncDirLabel = wx.StaticText(settings_panel, wx.ID_ANY, "Local Folder:")
         self.userHome = "%s/gosync" % os.getenv("HOME")
@@ -75,7 +75,7 @@ class PageAccountSettings(wx.Panel):
 
         mainsizer.Add(accountText, 0, wx.ALL|wx.EXPAND, 5)
         mainsizer.Add(container_panel, 0, wx.ALL|wx.EXPAND, 5)
-        mainsizer.Add(syncOptionsText, 0, wx.ALL|wx.EXPAND, 10)
+        mainsizer.Add(syncOptionsText, 0, wx.ALL|wx.EXPAND, 5)
         settings_panel.SetSizerAndFit(prefSizer)
         mainsizer.Add(settings_panel, 0, wx.ALL|wx.EXPAND, 5)
         self.SetSizerAndFit(mainsizer)
@@ -130,19 +130,11 @@ class GoSyncController(wx.Frame):
         # add the pages to the notebook with the label to show on the tab
         nb.AddPage(accountSettingsPage, "Account && Options")
 
-        self.CreateStatusBar(style=0)
-        self.SetStatusText("Welcome to GoSync!")
-
-        self.sync_model.SetSyncStatusListener(self)
-
         # finally, put the notebook in a sizer for the panel to manage
         # the layout
         sizer = wx.BoxSizer()
         sizer.Add(nb, 1, wx.EXPAND)
         p.SetSizer(sizer)
-
-    def OnSyncUpdate(self, sync_type, msg):
-        self.SetStatusText(msg)
 
     def CreateMenuItem(self, menu, label, func, icon=None):
         item = wx.MenuItem(menu, -1, label)
