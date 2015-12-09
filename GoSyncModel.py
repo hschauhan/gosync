@@ -1,17 +1,17 @@
 # gosync is an open source google drive sync application for Linux
 #
 # Copyright (C) 2015 Himanshu Chauhan
-# 
+#
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 2
 # of the License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -35,8 +35,20 @@ class MD5ChecksumCalculationFailed(RuntimeError):
 class RegularFileUploadFailed(RuntimeError):
     """Upload of a regular file failed"""
 
+audio_file_mimelist = ['audio/mpeg', 'audio/x-mpeg-3', 'audio/mpeg3', 'audio/aiff', 'audio/x-aiff']
+movie_file_mimelist = ['video/mp4', 'video/x-msvideo', 'video/mpeg', 'video/flv', 'video/quicktime']
+image_file_mimelist = ['image/png', 'image/jpeg', 'image/jpg', 'image/tiff']
+document_file_mimelist = ['application/powerpoint', 'applciation/mspowerpoint', 'application/x-mspowerpoint', 'application/pdf', 'application/x-dvi']
+
 class GoSyncModel(object):
     def __init__(self):
+        self.calculatingDriveUsage = False
+        self.driveAudioUsage = 0
+        self.driveMoviesUsage = 0
+        self.drivePhotoUsage = 0
+        self.driveDocumentUsage = 0
+        self.driveOthersUsage = 0
+
         self.config_path = expanduser("~") + "/.gosync"
         self.credential_file = self.config_path + "/.credentials.json"
         self.do_sync = True
@@ -62,11 +74,15 @@ class GoSyncModel(object):
 
         self.observer = Observer()
         self.DoAuthenticate()
+        self.about_drive = self.authToken.service.about().get().execute()
+        self.sync_lock = threading.Lock()
         self.sync_thread = threading.Thread(target=self.run)
+        self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
         self.sync_thread.daemon = True
+        self.usage_calc_thread.daemon = True
         self.cancelRunningSync = True
         self.sync_thread.start()
-        self.sync_lock = threading.Lock()
+        self.usage_calc_thread.start()
 
         self.observer.start()
 
@@ -100,7 +116,7 @@ class GoSyncModel(object):
             self.is_logged_in = False
 
     def DriveInfo(self):
-        return self.authToken.service.about().get().execute()
+        return self.about_drive
 
     def PathLeaf(self, path):
         head, tail = ntpath.split(path)
@@ -310,6 +326,50 @@ class GoSyncModel(object):
                 self.SyncDirectory('root', '')
                 self.sync_lock.release()
             time.sleep(10)
+
+    def calculateUsageOfFolder(self, folder_id):
+        file_list = self.drive.ListFile({'q': "'%s' in parents and trashed=false" % folder_id}).GetList()
+        for f in file_list:
+            if f['mimeType'] == 'application/vnd.google-apps.folder':
+                self.calculateUsageOfFolder(f['id'])
+            else:
+                if not self.IsGoogleDocument(f):
+                    if any(f['mimeType'] in s for s in audio_file_mimelist):
+                        self.driveAudioUsage += long(f['fileSize'])
+                    elif  any(f['mimeType'] in s for s in image_file_mimelist):
+                        self.drivePhotoUsage += long(f['fileSize'])
+                    elif any(f['mimeType'] in s for s in movie_file_mimelist):
+                        self.driveMoviesUsage += long(f['fileSize'])
+                    elif any(f['mimeType'] in s for s in document_file_mimelist):
+                        self.driveDocumentUsage += long(f['fileSize'])
+                    else:
+                        self.driveOthersUsage += long(f['fileSize'])
+
+    def calculateUsage(self):
+        while True:
+            self.sync_lock.acquire()
+            print "calculating drive usage\n"
+            self.calculatingDriveUsage = True
+            self.calculateUsageOfFolder('root')
+            self.calculatingDriveUsage = False
+            print "calculating drive usage done\n"
+            self.sync_lock.release()
+            time.sleep(300)
+
+    def IsCalculatingDriveUsage(self):
+        return self.calculatingDriveUsage
+
+    def GetAudioUsage(self):
+        return self.driveAudioUsage
+
+    def GetMovieUsage(self):
+        return self.driveMoviesUsage
+
+    def GetDocumentUsage(self):
+        return self.driveDocumentUsage
+
+    def GetOthersUsage(self):
+        return self.driveOthersUsage
 
     def StartSync(self):
         self.cancelRunningSync = False

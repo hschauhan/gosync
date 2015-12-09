@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import wx
+import wx, math
 
 class DriveUsageBox(wx.Panel):
     def __init__(self, parent, drive_size_bytes, id=wx.ID_ANY, bar_position=(0,0), bar_size=(500,20)):
@@ -31,6 +31,8 @@ class DriveUsageBox(wx.Panel):
         self.audioSize = 0
         self.otherSize = 0
         self.documentSize = 0
+
+        self.drive_size_bytes = drive_size_bytes
 
         t1 = wx.StaticText(self, -1, "Your Google Drive usage is show below:\n", (0,0))
         t1.SetFont(font)
@@ -101,6 +103,13 @@ class DriveUsageBox(wx.Panel):
         mainSizer.Add(legendSizer)
         self.SetSizerAndFit(mainSizer)
 
+    def FileSizeHumanize(self, size):
+        size = abs(size)
+        if (size==0):
+            return "0B"
+        units = ['B','KiB','MiB','GiB','TiB','PiB','EiB','ZiB','YiB']
+        p = math.floor(math.log(size, 2)/10)
+        return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
 
     def SetAudioUsageColor(self, color):
         self.audioPanelColor = color
@@ -115,24 +124,20 @@ class DriveUsageBox(wx.Panel):
         self.othersPanelColor = color
 
     def SetAudioUsage(self, size):
-        self.audioPanelWidth = size
-        sizeString = "%s bytes" % size
-        self.legendAudioText.SetLabel(sizeString)
+        self.audioPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
+        self.legendAudioText.SetLabel(self.FileSizeHumanize(size))
 
     def SetMoviesUsage(self, size):
-        self.moviesPanelWidth = size
-        sizeString = "%s bytes" % size
-        self.legendMoviesText.SetLabel(sizeString)
+        self.moviesPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
+        self.legendMoviesText.SetLabel(self.FileSizeHumanize(size))
 
     def SetDocumentUsage(self, size):
-        self.documentPanelWidth = size
-        sizeString = "%s bytes" % size
-        self.legendDocumentText.SetLabel(sizeString)
+        self.documentPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
+        self.legendDocumentText.SetLabel(self.FileSizeHumanize(size))
 
     def SetOthersUsage(self, size):
-        self.othersPanelWidth = size
-        sizeString = "%s bytes" % size
-        self.legendOthersText.SetLabel(sizeString)
+        self.othersPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
+        self.legendOthersText.SetLabel(self.FileSizeHumanize(size))
 
     def RePaint(self):
         panelList = [(self.audioPanel, self.audioPanelWidth, self.audioPanelColor),
@@ -140,14 +145,11 @@ class DriveUsageBox(wx.Panel):
                      (self.documentPanel, self.documentPanelWidth, self.documentPanelColor),
                      (self.othersPanel, self.othersPanelWidth, self.othersPanelColor)]
 
-        #panel_tuple = sorted(panelList, key=lambda plist: plist[1], reverse=True)
         cpos = 0
         for ctuple in panelList:
             pwidth = (self.barWidth * ctuple[1])/100
             if (pwidth < 0):
                 pwidth = 1
-
-            print "Width: %d percent: %d\n" % (ctuple[1], pwidth)
 
             ctuple[0].SetBackgroundColour(ctuple[2])
             ctuple[0].SetSize((0,0))
