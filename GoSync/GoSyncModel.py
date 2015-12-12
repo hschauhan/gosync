@@ -28,6 +28,8 @@ import logging
 from defines import *
 from GoSyncEvents import *
 
+class ClientSecretsNotFound(RuntimeError):
+    """Client secrets file was not found"""
 class FileNotFound(RuntimeError):
     """File was not found on google drive"""
 class FolderNotFound(RuntimeError):
@@ -72,11 +74,17 @@ class GoSyncModel(object):
         self.do_sync = True
         self.settings_file = os.path.dirname(os.path.realpath(__file__)) + "/settings.yaml"
         self.mirror_directory = expanduser("~") + "/gosync-drive"
+        self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
+
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
+            raise ClientSecretsNotFound()
 
         if not os.path.exists(self.mirror_directory):
             os.mkdir(self.mirror_directory, 0755)
+
+        if not os.path.exists(self.client_secret_file):
+            raise ClientSecretsNotFound()
 
         if not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')

@@ -17,8 +17,8 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import wx, os, time
-import sys, os, wx, ntpath, defines, threading, math
-from GoSyncModel import GoSyncModel
+import sys, os, wx, ntpath, defines, threading, math, webbrowser
+from GoSyncModel import GoSyncModel, ClientSecretsNotFound
 from defines import *
 from threading import Timer
 from DriveUsageBox import DriveUsageBox
@@ -94,6 +94,15 @@ class GoSyncController(wx.Frame):
 
         try:
             self.sync_model = GoSyncModel()
+        except ClientSecretsNotFound:
+            dial = wx.MessageDialog(None, 'Client secret file was not found!\n\nDo you want to know how to create one?\n',
+                                    'Error', wx.YES_NO | wx.ICON_EXCLAMATION)
+            res = dial.ShowModal()
+
+            if res == wx.ID_YES:
+                webbrowser.open(CLIENT_SECRET_HELP_SITE, new=1, autoraise=True)
+
+            sys.exit(1)
         except:
             dial = wx.MessageDialog(None, 'GoSync failed to initialize\n',
                                     'Error', wx.ID_OK | wx.ICON_EXCLAMATION)
