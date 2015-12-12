@@ -27,6 +27,7 @@ from GoSyncEvents import *
 ID_SYNC_TOGGLE = wx.NewId()
 
 mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX)
+HERE=os.path.abspath(os.path.dirname(__file__))
 
 class PageAccountSettings(wx.Panel):
     def __init__(self, parent, sync_model):
@@ -124,12 +125,12 @@ class GoSyncController(wx.Frame):
             menu_txt = 'Pause Sync'
         else:
             menu_txt = 'Resume Sync'
-        self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon='resources/sync-menu.png', id=ID_SYNC_TOGGLE)
+        self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
         self.Bind(wx.EVT_UPDATE_UI, self.OnSyncUIUpdate, id=ID_SYNC_TOGGLE)
 
         menu.AppendSeparator()
-        self.CreateMenuItem(menu, 'A&bout', self.OnAbout, 'resources/info.png')
-        self.CreateMenuItem(menu, 'E&xit', self.OnExit, 'resources/exit.png')
+        self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
+        self.CreateMenuItem(menu, 'E&xit', self.OnExit, os.path.join(HERE, 'resources/exit.png'))
 
         menuBar.Append(menu, '&File')
 
