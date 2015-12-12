@@ -23,6 +23,9 @@ from os.path import expanduser
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
 from threading import Thread
+from apiclient.errors import HttpError
+import logging
+from defines import *
 
 class FileNotFound(RuntimeError):
     """File was not found on google drive"""
@@ -95,6 +98,15 @@ class GoSyncModel(object):
         self.sync_thread.daemon = True
         self.usage_calc_thread.daemon = True
         self.cancelRunningSync = True
+
+        self.logger = logging.getLogger(APP_NAME)
+        self.logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler('GoSync.log')
+        fh.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
+
         self.sync_thread.start()
         self.usage_calc_thread.start()
 
@@ -141,11 +153,11 @@ class GoSyncModel(object):
         Return the folder with name in "folder_name" in the parent folder
         mentioned in parent.
         """
-        print "GetFolderOnDrive: searching %s on %s... " % (folder_name, parent)
+        self.logger.debug("GetFolderOnDrive: searching %s on %s... " % (folder_name, parent))
         file_list = self.drive.ListFile({'q': "'%s' in parents and trashed=false" % parent}).GetList()
         for f in file_list:
             if f['title'] == folder_name and f['mimeType']=='application/vnd.google-apps.folder':
-                print "Found!\n"
+                self.logger.debug("Found!\n")
                 return f
 
         return None
@@ -185,20 +197,29 @@ class GoSyncModel(object):
     def LocateFileOnDrive(self, abs_filepath):
         dirpath = os.path.dirname(abs_filepath)
         filename = self.PathLeaf(abs_filepath)
-        try:
-            f = self.LocateFolderOnDrive(dirpath)
-        except FolderNotFound:
-            raise
-        except FileListQueryFailed:
-            raise
 
-        try:
-            fil = self.LocateFileInFolder(filename, f['id'])
-            return fil
-        except FileNotFound:
-            raise
-        except FileListQueryFailed:
-            raise
+        if dirpath != '':
+            try:
+                f = self.LocateFolderOnDrive(dirpath)
+                try:
+                    fil = self.LocateFileInFolder(filename, f['id'])
+                    return fil
+                except FileNotFound:
+                    raise
+                except FileListQueryFailed:
+                    raise
+            except FolderNotFound:
+                raise
+            except FileListQueryFailed:
+                raise
+        else:
+            try:
+                fil = self.LocateFileInFolder(filename)
+                return fil
+            except FileNotFound:
+                raise
+            except FileListQueryFailed:
+                raise
 
     def CreateDirectoryInParent(self, dirname, parent_id='root'):
         upfile = self.drive.CreateFile({'title': dirname,
@@ -207,6 +228,7 @@ class GoSyncModel(object):
         upfile.Upload()
 
     def CreateDirectoryByPath(self, dirpath):
+        self.logger.debug("create directory: %s\n" % dirpath)
         drivepath = dirpath.split(self.mirror_directory+'/')[1]
         basepath = os.path.dirname(drivepath)
         dirname = self.PathLeaf(dirpath)
@@ -223,18 +245,21 @@ class GoSyncModel(object):
                     self.CreateDirectoryInParent(dirname, parent_folder['id'])
                 except:
                     errorMsg = "Failed to locate directory path %s on drive.\n" % basepath
+                    self.logger.error(errorMsg)
                     dial = wx.MessageDialog(None, errorMsg, 'Directory Not Found',
                                             wx.ID_OK | wx.ICON_EXCLAMATION)
                     dial.ShowModal()
                     return
         except FileListQueryFailed:
             errorMsg = "Server Query Failed!\n"
+            self.logger.error(errorMsg)
             dial = wx.MessageDialog(None, errorMsg, 'Directory Not Found',
                                     wx.ID_OK | wx.ICON_EXCLAMATION)
             dial.ShowModal()
             return
 
     def CreateRegularFile(self, file_path, parent='root', uploaded=False):
+        self.logger.debug("Create file %s\n" % file_path)
         filename = self.PathLeaf(file_path)
         upfile = self.drive.CreateFile({'title': filename,
                                        "parents": [{"kind": "drive#fileLink", "id": parent}]})
@@ -242,20 +267,26 @@ class GoSyncModel(object):
         upfile.Upload()
 
     def UploadFile(self, file_path):
-        self.sync_lock.acquire()
         if os.path.isfile(file_path):
             drivepath = file_path.split(self.mirror_directory+'/')[1]
+            self.logger.debug("file: %s drivepath is %s\n" % (file_path, drivepath))
             try:
                 f = self.LocateFileOnDrive(drivepath)
+                self.logger.debug('Found file %s on remote (dpath: %s)\n' % (f['title'], drivepath))
                 newfile = False
+                self.logger.debug('Checking if they are same... ')
                 if f['md5Checksum'] == self.HashOfFile(file_path):
-                    self.sync_lock.release()
+                    self.logger.debug('yes\n')
                     return
+                else:
+                    self.logger.debug('no\n')
             except (FileNotFound, FolderNotFound):
+                self.logger.debug("A new file!\n")
                 newfile = True
 
             dirpath = os.path.dirname(drivepath)
             if dirpath == '':
+                self.logger.debug('Creating %s file in root\n' % file_path)
                 self.CreateRegularFile(file_path, 'root', newfile)
             else:
                 try:
@@ -271,6 +302,10 @@ class GoSyncModel(object):
                     raise RegularFileUploadFailed()
         else:
             self.CreateDirectoryByPath(file_path)
+
+    def UploadObservedFile(self, file_path):
+        self.sync_lock.acquire()
+        self.UploadFile(file_path)
         self.sync_lock.release()
 
     ####### DOWNLOAD SECTION #######
@@ -281,8 +316,10 @@ class GoSyncModel(object):
                 return self.drive.ListFile(query).GetList()
             except HttpError as error:
                 if error.resp.reason in ['userRateLimitExceeded', 'quotaExceeded']:
+                    self.logger.error("user rate limit/quota exceeded. Will try later\n")
                     time.sleep((2**n) + random.random())
 
+        self.logger.error("Can't get the connection back after many retries. Bailing out\n")
         raise FileListQueryFailed
 
     def TotalFilesInFolder(self, parent='root'):
@@ -314,11 +351,13 @@ class GoSyncModel(object):
         abs_filepath.replace(' ', '\ ')
         if os.path.exists(abs_filepath):
             if self.HashOfFile(abs_filepath) == file_obj['md5Checksum']:
+                self.logger.debug('%s file is same as local. not downloading\n' % abs_filepath)
                 return
         else:
+            self.logger.info('Downloading %s\n' % abs_filepath)
             dfile.GetContentFile(abs_filepath)
 
-    def SyncDirectory(self, parent, pwd):
+    def SyncRemoteDirectory(self, parent, pwd):
         if self.cancelRunningSync:
             return
 
@@ -332,27 +371,47 @@ class GoSyncModel(object):
                     abs_dirpath = os.path.join(self.mirror_directory, pwd, f['title'])
                     if not os.path.exists(abs_dirpath):
                         os.makedirs(abs_dirpath)
-                        self.SyncDirectory(f['id'], os.path.join(pwd, f['title']))
+                    self.logger.debug('syncing directory %s\n' % f['title'])
+                    self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['title']))
                 else:
                     if not self.IsGoogleDocument(f):
                         self.DownloadFileByObject(f, os.path.join(self.mirror_directory, pwd))
+                    else:
+                        self.logger.debug("%s is a google document\n" % f['title'])
         except:
+            self.logger.debug("Failed to sync directory\n")
             raise
+
+    def SyncLocalDirectory(self):
+        for root, dirs, files in os.walk(self.mirror_directory):
+            for names in dirs:
+                print (os.path.join(root,names))
+                self.UploadFile(os.path.join(root,names))
+
+            for names in files:
+                print (os.path.join(root, names))
+                self.UploadFile(os.path.join(root, names))
+
 
     def run(self):
         while True:
             if not self.cancelRunningSync:
                 self.sync_lock.acquire()
-                self.SyncDirectory('root', '')
+                self.logger.info("Syncing remote... ")
+                self.SyncRemoteDirectory('root', '')
+                self.logger.info("done\n")
+                self.logger.info("Syncing local... ")
+                self.SyncLocalDirectory()
+                self.logger.info("done\n")
                 self.sync_lock.release()
-            time.sleep(10)
+            time.sleep(60)
 
     def GetFileSize(self, f):
         try:
             size = f['fileSize']
             return long(size)
         except:
-            print "Failed to get size of file %s (mime: %s)\n" % (f['title'], f['mimeType'])
+            self.logger.error("Failed to get size of file %s (mime: %s)\n" % (f['title'], f['mimeType']))
             return 0
 
     def calculateUsageOfFolder(self, folder_id):
@@ -387,9 +446,9 @@ class GoSyncModel(object):
             self.driveOthersUsage = 0
             try:
                 self.totalFilesToCheck = self.TotalFilesInDrive()
-                print "Total files to check %d\n" % self.totalFilesToCheck
+                self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
             except:
-                print "failed to get the total files in drive\n"
+                self.logger.error("Failed to get the total number of files in drive\n")
 
             try:
                 self.calculateUsageOfFolder('root')
@@ -439,8 +498,8 @@ class FileModificationNotifyHandler(PatternMatchingEventHandler):
         self.sync_handler = sync_handler
 
     def on_created(self, evt):
-        print "%s created\n" % evt.src_path
-        self.sync_handler.UploadFile(evt.src_path)
+        self.logger.debug("Observer: %s created\n" % evt.src_path)
+        self.sync_handler.UploadObservedFile(evt.src_path)
 
     def on_moved(self, evt):
         print "file %s moved to %s: Not supported yet!\n" % (evt.src_path, evt.dest_path)
