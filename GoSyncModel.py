@@ -327,6 +327,14 @@ class GoSyncModel(object):
                 self.sync_lock.release()
             time.sleep(10)
 
+    def GetFileSize(self, f):
+        try:
+            size = f['fileSize']
+            return long(size)
+        except:
+            print "Failed to get size of file %s (mime: %s)\n" % (f['title'], f['mimeType'])
+            return 0
+
     def calculateUsageOfFolder(self, folder_id):
         file_list = self.drive.ListFile({'q': "'%s' in parents and trashed=false" % folder_id}).GetList()
         for f in file_list:
@@ -335,21 +343,26 @@ class GoSyncModel(object):
             else:
                 if not self.IsGoogleDocument(f):
                     if any(f['mimeType'] in s for s in audio_file_mimelist):
-                        self.driveAudioUsage += long(f['fileSize'])
+                        self.driveAudioUsage += self.GetFileSize(f)
                     elif  any(f['mimeType'] in s for s in image_file_mimelist):
-                        self.drivePhotoUsage += long(f['fileSize'])
+                        self.drivePhotoUsage += self.GetFileSize(f)
                     elif any(f['mimeType'] in s for s in movie_file_mimelist):
-                        self.driveMoviesUsage += long(f['fileSize'])
+                        self.driveMoviesUsage += self.GetFileSize(f)
                     elif any(f['mimeType'] in s for s in document_file_mimelist):
-                        self.driveDocumentUsage += long(f['fileSize'])
+                        self.driveDocumentUsage += self.GetFileSize(f)
                     else:
-                        self.driveOthersUsage += long(f['fileSize'])
+                        self.driveOthersUsage += self.GetFileSize(f)
 
     def calculateUsage(self):
         while True:
             self.sync_lock.acquire()
             print "calculating drive usage\n"
             self.calculatingDriveUsage = True
+            self.driveAudioUsage = 0
+            self.driveMoviesUsage = 0
+            self.driveDocumentUsage = 0
+            self.drivePhotoUsage = 0
+            self.driveOthersUsage = 0
             self.calculateUsageOfFolder('root')
             self.calculatingDriveUsage = False
             print "calculating drive usage done\n"
@@ -370,6 +383,9 @@ class GoSyncModel(object):
 
     def GetOthersUsage(self):
         return self.driveOthersUsage
+
+    def GetPhotoUsage(self):
+        return self.drivePhotoUsage
 
     def StartSync(self):
         self.cancelRunningSync = False

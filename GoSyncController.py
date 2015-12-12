@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import wx, os
+import wx, os, time
 import sys, os, wx, ntpath, defines, threading, math
 from GoSyncModel import GoSyncModel
 from defines import *
@@ -31,6 +31,8 @@ class PageAccountSettings(wx.Panel):
 
         self.sync_model = sync_model
 
+        aboutdrive = sync_model.DriveInfo()
+
         font = wx.Font(11, wx.SWISS, wx.NORMAL, wx.NORMAL)
         headerFont = wx.Font(11.5, wx.SWISS, wx.NORMAL, wx.BOLD)
 
@@ -39,11 +41,13 @@ class PageAccountSettings(wx.Panel):
 
         container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,1), size=(685, 150))
 
-        self.driveUsageBar = DriveUsageBox(container_panel, 16106127360, -1, bar_position=(50,90))
-        self.driveUsageBar.SetMoviesUsage(sync_model.GetMovieUsage())
-        self.driveUsageBar.SetDocumentUsage(sync_model.GetDocumentUsage())
-        self.driveUsageBar.SetOthersUsage(sync_model.GetOthersUsage())
-        self.driveUsageBar.SetAudioUsage(sync_model.GetAudioUsage())
+        self.driveUsageBar = DriveUsageBox(container_panel, long(aboutdrive['quotaBytesTotal']),
+                                           -1, bar_position=(50,90))
+        self.driveUsageBar.SetMoviesUsage(0)
+        self.driveUsageBar.SetDocumentUsage(0)
+        self.driveUsageBar.SetOthersUsage(0)
+        self.driveUsageBar.SetAudioUsage(0)
+        self.driveUsageBar.SetPhotoUsage(0)
         self.driveUsageBar.RePaint()
 
         settings_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5, 100), size=(600, 500))
@@ -82,14 +86,18 @@ class PageAccountSettings(wx.Panel):
         mainsizer.Add(settings_panel, 0, wx.ALL|wx.EXPAND, 5)
         self.SetSizerAndFit(mainsizer)
 
-        t = threading.Timer(10.0, self.UpdateUsageBar, [], {}).start()
+        self.updateTimer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self.UpdateUsageBar, self.updateTimer)
+        self.updateTimer.Start(7000, False)
 
-    def UpdateUsageBar(self):
-        self.driveUsageBar.SetMoviesUsage(self.sync_model.GetMovieUsage())
-        self.driveUsageBar.SetDocumentUsage(self.sync_model.GetDocumentUsage())
-        self.driveUsageBar.SetOthersUsage(self.sync_model.GetOthersUsage())
-        self.driveUsageBar.SetAudioUsage(self.sync_model.GetAudioUsage())
-        self.driveUsageBar.RePaint()
+    def UpdateUsageBar(self, event):
+        if not self.sync_model.IsCalculatingDriveUsage():
+            self.driveUsageBar.SetMoviesUsage(self.sync_model.GetMovieUsage())
+            self.driveUsageBar.SetDocumentUsage(self.sync_model.GetDocumentUsage())
+            self.driveUsageBar.SetOthersUsage(self.sync_model.GetOthersUsage())
+            self.driveUsageBar.SetAudioUsage(self.sync_model.GetAudioUsage())
+            self.driveUsageBar.SetPhotoUsage(self.sync_model.GetPhotoUsage())
+            self.driveUsageBar.RePaint()
 
 
     def onLocalBrowse(self, event):
@@ -113,7 +121,9 @@ class GoSyncController(wx.Frame):
 
         self.aboutdrive = self.sync_model.DriveInfo()
 
-        title_string = "GoSync -- Logged In as %s" % self.aboutdrive['name']
+        title_string = "GoSync --%s (%s used of %s)" % (self.aboutdrive['name'],
+                                                        self.FileSizeHumanize(long(self.aboutdrive['quotaBytesUsed'])),
+                                                        self.FileSizeHumanize(long(self.aboutdrive['quotaBytesTotal'])))
         self.SetTitle(title_string)
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
@@ -155,6 +165,14 @@ class GoSyncController(wx.Frame):
         self.Bind(wx.EVT_MENU, func, id=item.GetId())
         menu.AppendItem(item)
         return item
+
+    def FileSizeHumanize(self, size):
+        size = abs(size)
+        if (size==0):
+            return "0B"
+        units = ['B','KB','MB','GB','TB','PB','EB','ZB','YB']
+        p = math.floor(math.log(size, 2)/10)
+        return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
 
     def OnExit(self, event):
         dial = wx.MessageDialog(None, 'GoSync will stop syncing files until restarted.\nAre you sure to quit?\n',

@@ -41,6 +41,7 @@ class DriveUsageBox(wx.Panel):
         self.audioPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
         self.moviesPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
         self.documentPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0),(1, self.barHeight))
+        self.photoPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
         self.othersPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
 
         self.basePanel.SetBackgroundColour(wx.WHITE)
@@ -49,47 +50,60 @@ class DriveUsageBox(wx.Panel):
         self.moviesPanelWidth = 0
         self.documentPanelWidth = 0
         self.othersPanelWidth = 0
+        self.photoPanelWidth = 0
 
         self.audioPanelColor = wx.Colour(255,255,51)
         self.moviesPanelColor = wx.Colour(0, 204, 0)
         self.documentPanelColor = wx.Colour(153,0,153)
         self.othersPanelColor = wx.Colour(255,204,204)
+        self.photoPanelColor = wx.Colour(255,85, 0)
 
         mainSizer = wx.BoxSizer(wx.VERTICAL)
         mainSizer.Add(t1, 0, wx.ALL|wx.EXPAND, 5)
-        mainSizer.Add(self.basePanel, 0, wx.ALL|wx.FIXED_MINSIZE, 5)
+        #mainSizer.Add(self.basePanel, 0, wx.ALL|wx.FIXED_MINSIZE, 5)
+        mainSizer.Add(self.basePanel, 0, wx.ALL|wx.EXPAND, 5)
 
         legendAudio = wx.Panel(self, pos=(50,150), size=(15,15))
         legendAudio.SetBackgroundColour(self.audioPanelColor)
-        self.legendAudioText = wx.StaticText(self, -1, "")
+        self.legendAudioText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendAudioText.SetFont(font)
 
         legendMovies = wx.Panel(self, pos=(60, 150), size=(15,15))
         legendMovies.SetBackgroundColour(self.moviesPanelColor)
-        self.legendMoviesText = wx.StaticText(self, -1, "")
+        self.legendMoviesText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendMoviesText.SetFont(font)
 
         legendDocument = wx.Panel(self, pos=(70,150), size=(15,15))
         legendDocument.SetBackgroundColour(self.documentPanelColor)
-        self.legendDocumentText = wx.StaticText(self, -1, "")
+        self.legendDocumentText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendDocumentText.SetFont(font)
 
         legendOthers = wx.Panel(self, pos=(80,150), size=(15,15))
         legendOthers.SetBackgroundColour(self.othersPanelColor)
-        self.legendOthersText = wx.StaticText(self, -1, "")
+        self.legendOthersText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendOthersText.SetFont(font)
+
+        legendPhoto = wx.Panel(self, pos=(80,150), size=(15,15))
+        legendPhoto.SetBackgroundColour(self.photoPanelColor)
+        self.legendPhotoText = wx.StaticText(self, -1, "", size=(200,20))
+        self.legendPhotoText.SetFont(font)
 
         legendFree = wx.Panel(self, pos=(90, 150), size=(15,15))
         legendFree.SetBackgroundColour(wx.WHITE)
         legendFreeText = wx.StaticText(self, -1, "Free Space")
         legendFreeText.SetFont(font)
 
-        legendSizer = wx.BoxSizer(wx.HORIZONTAL)
+        legendSizer = wx.FlexGridSizer(cols=4, hgap=5, vgap=10)
+        legendSizer.AddGrowableCol(1)
+
         legendSizer.Add(legendAudio, 0, wx.ALL|wx.EXPAND, 5)
         legendSizer.Add(self.legendAudioText, 0, wx.ALL|wx.EXPAND, 5)
 
         legendSizer.Add(legendMovies, 0, wx.ALL|wx.EXPAND, 5)
         legendSizer.Add(self.legendMoviesText, 0, wx.ALL|wx.EXPAND, 5)
+
+        legendSizer.Add(legendPhoto, 0 , wx.ALL|wx.EXPAND, 5)
+        legendSizer.Add(self.legendPhotoText, 0, wx.ALL|wx.EXPAND, 5)
 
         legendSizer.Add(legendDocument, 0, wx.ALL|wx.EXPAND, 5)
         legendSizer.Add(self.legendDocumentText, 0, wx.ALL|wx.EXPAND, 5)
@@ -107,7 +121,7 @@ class DriveUsageBox(wx.Panel):
         size = abs(size)
         if (size==0):
             return "0B"
-        units = ['B','KiB','MiB','GiB','TiB','PiB','EiB','ZiB','YiB']
+        units = [' B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB']
         p = math.floor(math.log(size, 2)/10)
         return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
 
@@ -125,22 +139,27 @@ class DriveUsageBox(wx.Panel):
 
     def SetAudioUsage(self, size):
         self.audioPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
-        self.legendAudioText.SetLabel(self.FileSizeHumanize(size))
+        self.legendAudioText.SetLabel('Audio ' + self.FileSizeHumanize(size))
 
     def SetMoviesUsage(self, size):
         self.moviesPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
-        self.legendMoviesText.SetLabel(self.FileSizeHumanize(size))
+        self.legendMoviesText.SetLabel('Movies ' + self.FileSizeHumanize(size))
+
+    def SetPhotoUsage(self, size):
+        self.photoPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
+        self.legendPhotoText.SetLabel('Photos ' + self.FileSizeHumanize(size))
 
     def SetDocumentUsage(self, size):
         self.documentPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
-        self.legendDocumentText.SetLabel(self.FileSizeHumanize(size))
+        self.legendDocumentText.SetLabel('Documents ' + self.FileSizeHumanize(size))
 
     def SetOthersUsage(self, size):
         self.othersPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
-        self.legendOthersText.SetLabel(self.FileSizeHumanize(size))
+        self.legendOthersText.SetLabel('Others ' + self.FileSizeHumanize(size))
 
     def RePaint(self):
         panelList = [(self.audioPanel, self.audioPanelWidth, self.audioPanelColor),
+                     (self.photoPanel, self.photoPanelWidth, self.photoPanelColor),
                      (self.moviesPanel, self.moviesPanelWidth, self.moviesPanelColor),
                      (self.documentPanel, self.documentPanelWidth, self.documentPanelColor),
                      (self.othersPanel, self.othersPanelWidth, self.othersPanelColor)]
@@ -149,8 +168,9 @@ class DriveUsageBox(wx.Panel):
         for ctuple in panelList:
             pwidth = (self.barWidth * ctuple[1])/100
             if (pwidth < 0):
-                pwidth = 1
+                pwidth = 0
 
+            #print "pcent: %f width: %d pwidth: %d\n" % (ctuple[1], self.barWidth, pwidth)
             ctuple[0].SetBackgroundColour(ctuple[2])
             ctuple[0].SetSize((0,0))
             ctuple[0].SetSize((pwidth, self.barHeight))
