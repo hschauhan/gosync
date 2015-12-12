@@ -18,12 +18,6 @@
 
 import os,sys
 
-TRAY_TOOLTIP = 'GoSync - A Google Drive Client for Linux'
-TRAY_ICON = 'resources/GoSyncIcon.png'
-APP_ICON = 'resources/GoSyncIcon-16.png'
-ABOUT_ICON = 'resources/GoSyncIcon-64.png'
-APP_NAME = 'GoSync'
-APP_VERSION = '0.2'
 APP_LICENSE = """GoSync is an open source Google Drive(TM) client written in python
 
 Copyright (C) 2015  Himanshu Chauhan
@@ -50,4 +44,12 @@ APP_DESCRIPTION = 'GoSync is an open source Google Drive client written in pytho
 APP_CONFIG_FILE_NAME = 'gosyncrc'
 CLIENT_SECRET_HELP_SITE='https://github.com/jay0lee/GAM/wiki/Creating-client_secrets.json-and-oauth2service.json'
 APP_PATH = os.path.abspath(os.path.dirname(os.path.join(sys.argv[0])))
+HERE=os.path.abspath(os.path.dirname(__file__))
 INI_FILE = os.path.join(APP_PATH, "gosync.ini")
+
+TRAY_TOOLTIP = 'GoSync - A Google Drive Client for Linux'
+TRAY_ICON = HERE + '/resources/GoSyncIcon.png'
+APP_ICON = HERE + '/resources/GoSyncIcon-16.png'
+ABOUT_ICON = HERE + '/resources/GoSyncIcon-64.png'
+APP_NAME = 'GoSync'
+APP_VERSION = '0.11'
