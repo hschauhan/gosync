@@ -33,13 +33,7 @@ using GoSync:
     3. python-googleapi 
     4. pip 
     5. watchdog (to be installed from pip)
-
-GoSync also depends on PyDrive but right now its keeping its own version in the source code.
-I have an specific change about getting details of drive like user currently logged in and
-total drive usage and quota. I haven't submitted these changes to original PyDrive yet. Once
-they are there, I will remove this pydrive code from GoSync source.
-
-You can read more about pydrive at http://pythonhosted.org/PyDrive/
+    6. pydrive (to be installed from pip)
 
 For libraries you need only that many. But there is one more essential thing. The "client_secrets.json"
 file. I am not distributing my "client_secrets.json" because I am not distributing GoSync commercially.
@@ -59,5 +53,7 @@ https://github.com/hschauhan/gosync
 
 A Request
 ---------
-Please help in improving this project. You can send me patches at hschauhan at nulltrace dot org. If you can't write the code and you find something more or something non-functional, please create a bug on github page. I will see if I can fix that as soon as possible.
-Since I work on this project in my free time, I can't tell when exactly I will be able to honor your request. But rest assured I will.
+Please help in improving this project. You can send me patches at hschauhan at nulltrace dot org. If you
+can't write the code and you find something more or something non-functional, please create a bug on github
+page. I will see if I can fix that as soon as possible. Since I work on this project in my free time, I
+can't tell when exactly I will be able to honor your request. But rest assured I will.
