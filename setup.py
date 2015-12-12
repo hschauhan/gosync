@@ -29,6 +29,10 @@ setup(
     keywords='Google Drive client Linux Python',
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),
 
+    package_data={
+        'GoSync':['resources/*.png'],
+    },
+
     install_requires=['wxpython', 'google-api-python-client', 'pydrive', 'watchdog'],
     entry_points={
         'console_scripts':[
