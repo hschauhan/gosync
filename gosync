@@ -28,7 +28,9 @@ sys.path.insert(0, APP_PATH)
 def main():
     os.chdir(APP_PATH)
     app = wx.PySimpleApp()
-    GoSyncController().Show()
+    controller = GoSyncController()
+    controller.Center()
+    controller.Show()
     app.MainLoop()
 
 if __name__ == '__main__':

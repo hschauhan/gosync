@@ -1,4 +1,4 @@
-# gosync is an open source google drive sync application for Linux
+# gosync is an open source Google Drive(TM) sync application for Linux
 #
 # Copyright (C) 2015 Himanshu Chauhan
 # 

@@ -1,4 +1,4 @@
-# gosync is an open source google drive sync application for Linux
+# gosync is an open source Google Drive(TM) sync application for Linux
 #
 # Copyright (C) 2015 Himanshu Chauhan
 #
@@ -22,7 +22,7 @@ class DriveUsageBox(wx.Panel):
     def __init__(self, parent, drive_size_bytes, id=wx.ID_ANY, bar_position=(0,0), bar_size=(500,20)):
         wx.Panel.__init__(self, parent, id=wx.ID_ANY)
 
-        font = wx.Font(11, wx.SWISS, wx.NORMAL, wx.NORMAL)
+        font = wx.Font(10, wx.SWISS, wx.NORMAL, wx.NORMAL)
 
         self.barWidth = bar_size[0]
         self.barHeight = bar_size[1]
@@ -32,10 +32,12 @@ class DriveUsageBox(wx.Panel):
         self.otherSize = 0
         self.documentSize = 0
 
+        legendSize = (15,10)
+
         self.drive_size_bytes = drive_size_bytes
 
-        t1 = wx.StaticText(self, -1, "Your Google Drive usage is show below:\n", (0,0))
-        t1.SetFont(font)
+        self.t1 = wx.StaticText(self, -1, "Your Google Drive usage is shown below:\n", (0,0))
+        self.t1.SetFont(font)
 
         self.basePanel = wx.Panel(self, id, bar_position, bar_size, wx.SUNKEN_BORDER)
         self.audioPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
@@ -59,36 +61,36 @@ class DriveUsageBox(wx.Panel):
         self.photoPanelColor = wx.Colour(255,85, 0)
 
         mainSizer = wx.BoxSizer(wx.VERTICAL)
-        mainSizer.Add(t1, 0, wx.ALL|wx.EXPAND, 5)
+        mainSizer.Add(self.t1, 0, wx.ALL|wx.EXPAND, 5)
         #mainSizer.Add(self.basePanel, 0, wx.ALL|wx.FIXED_MINSIZE, 5)
         mainSizer.Add(self.basePanel, 0, wx.ALL|wx.EXPAND, 5)
 
-        legendAudio = wx.Panel(self, pos=(50,150), size=(15,15))
+        legendAudio = wx.Panel(self, pos=(50,150), size=legendSize)
         legendAudio.SetBackgroundColour(self.audioPanelColor)
         self.legendAudioText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendAudioText.SetFont(font)
 
-        legendMovies = wx.Panel(self, pos=(60, 150), size=(15,15))
+        legendMovies = wx.Panel(self, pos=(60, 150), size=legendSize)
         legendMovies.SetBackgroundColour(self.moviesPanelColor)
         self.legendMoviesText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendMoviesText.SetFont(font)
 
-        legendDocument = wx.Panel(self, pos=(70,150), size=(15,15))
+        legendDocument = wx.Panel(self, pos=(70,150), size=legendSize)
         legendDocument.SetBackgroundColour(self.documentPanelColor)
         self.legendDocumentText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendDocumentText.SetFont(font)
 
-        legendOthers = wx.Panel(self, pos=(80,150), size=(15,15))
+        legendOthers = wx.Panel(self, pos=(80,150), size=legendSize)
         legendOthers.SetBackgroundColour(self.othersPanelColor)
         self.legendOthersText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendOthersText.SetFont(font)
 
-        legendPhoto = wx.Panel(self, pos=(80,150), size=(15,15))
+        legendPhoto = wx.Panel(self, pos=(80,150), size=legendSize)
         legendPhoto.SetBackgroundColour(self.photoPanelColor)
         self.legendPhotoText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendPhotoText.SetFont(font)
 
-        legendFree = wx.Panel(self, pos=(90, 150), size=(15,15))
+        legendFree = wx.Panel(self, pos=(90, 150), size=legendSize)
         legendFree.SetBackgroundColour(wx.WHITE)
         legendFreeText = wx.StaticText(self, -1, "Free Space")
         legendFreeText.SetFont(font)
@@ -124,6 +126,9 @@ class DriveUsageBox(wx.Panel):
         units = [' B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB']
         p = math.floor(math.log(size, 2)/10)
         return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
+
+    def SetStatusMessage(self, msg):
+        self.t1.SetLabel(msg)
 
     def SetAudioUsageColor(self, color):
         self.audioPanelColor = color

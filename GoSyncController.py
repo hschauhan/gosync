@@ -1,4 +1,4 @@
-# gosync is an open source google drive sync application for Linux
+# gosync is an open source Google Drive(TM) sync application for Linux
 #
 # Copyright (C) 2015 Himanshu Chauhan
 #
@@ -22,6 +22,7 @@ from GoSyncModel import GoSyncModel
 from defines import *
 from threading import Timer
 from DriveUsageBox import DriveUsageBox
+from GoSyncEvents import *
 
 ID_SYNC_TOGGLE = wx.NewId()
 
@@ -38,13 +39,14 @@ class PageAccountSettings(wx.Panel):
         font = wx.Font(11, wx.SWISS, wx.NORMAL, wx.NORMAL)
         headerFont = wx.Font(11.5, wx.SWISS, wx.NORMAL, wx.BOLD)
 
-        accountText = wx.StaticText(self, wx.ID_ANY, "Account", pos=(0,0))
-        accountText.SetFont(headerFont)
+        #accountText = wx.StaticText(self, wx.ID_ANY, "Account", pos=(0,0))
+        #accountText.SetFont(headerFont)
 
-        container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,1), size=(685, 150))
+        container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,1), size=(685, 155))
 
         self.driveUsageBar = DriveUsageBox(container_panel, long(aboutdrive['quotaBytesTotal']),
                                            -1, bar_position=(50,90))
+        self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
         self.driveUsageBar.SetDocumentUsage(0)
         self.driveUsageBar.SetOthersUsage(0)
@@ -52,66 +54,43 @@ class PageAccountSettings(wx.Panel):
         self.driveUsageBar.SetPhotoUsage(0)
         self.driveUsageBar.RePaint()
 
-        settings_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5, 100), size=(600, 500))
-        syncOptionsText = wx.StaticText(self, wx.ID_ANY, "Sync Options", pos=(0, 100))
-        syncOptionsText.SetFont(headerFont)
-        localSyncDirLabel = wx.StaticText(settings_panel, wx.ID_ANY, "Local Folder:")
-        self.userHome = "%s/gosync" % os.getenv("HOME")
-        self.localSyncDirText = wx.TextCtrl(settings_panel, wx.ID_ANY, self.userHome)
-        localSyncDirLabel.SetFont(font)
-        self.localSyncDirBrowseBtn = wx.Button(settings_panel, wx.ID_ANY, 'Browse')
-        self.localSyncDirBrowseBtn.Bind(wx.EVT_BUTTON, self.onLocalBrowse)
-
-        serverSyncDirLabel = wx.StaticText(settings_panel, wx.ID_ANY, "Server Folder(s):")
-        self.serverSyncDirText = wx.TextCtrl(settings_panel, wx.ID_ANY, 'root')
-        serverSyncDirLabel.SetFont(font)
-        self.serverSyncDirBrowseBtn = wx.Button(settings_panel, wx.ID_ANY, 'Browse')
-        #self.serverSyncDirBrowseBtn.Bind(wx.EVT_BUTTON, self.onServerBrowse)
 
         mainsizer = wx.BoxSizer(wx.VERTICAL)
 
-        prefSizer = wx.FlexGridSizer(cols=3, hgap=5, vgap=10)
-        prefSizer.AddGrowableCol(1)
-
-        prefSizer.Add(localSyncDirLabel, 0, wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        prefSizer.Add(self.localSyncDirText, 0, wx.EXPAND)
-        prefSizer.Add(self.localSyncDirBrowseBtn, 0)
-
-        prefSizer.Add(serverSyncDirLabel, 0, wx.ALIGN_LEFT | wx.ALIGN_CENTER_VERTICAL)
-        prefSizer.Add(self.serverSyncDirText, 0, wx.EXPAND)
-        prefSizer.Add(self.serverSyncDirBrowseBtn, 0)
-
-        mainsizer.Add(accountText, 0, wx.ALL|wx.EXPAND, 5)
+        #mainsizer.Add(accountText, 0, wx.ALL|wx.EXPAND, 5)
         mainsizer.Add(container_panel, 0, wx.ALL|wx.EXPAND, 5)
-        mainsizer.Add(syncOptionsText, 0, wx.ALL|wx.EXPAND, 5)
-        settings_panel.SetSizerAndFit(prefSizer)
-        mainsizer.Add(settings_panel, 0, wx.ALL|wx.EXPAND, 5)
         self.SetSizerAndFit(mainsizer)
 
-        self.updateTimer = wx.Timer(self)
-        self.Bind(wx.EVT_TIMER, self.UpdateUsageBar, self.updateTimer)
-        self.updateTimer.Start(7000, False)
+        #self.updateTimer = wx.Timer(self)
+        #self.Bind(wx.EVT_TIMER, self.UpdateUsageBar, self.updateTimer)
 
-    def UpdateUsageBar(self, event):
-        if not self.sync_model.IsCalculatingDriveUsage():
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
+                                          self.OnUsageCalculationStarted)
+        #GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_UPDATE,
+        #                                  self.UpdateUsageBar)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
+                                          self.OnUsageCalculationDone)
+
+        #self.updateTimer.Start(10000, False)
+
+    def OnUsageCalculationDone(self, event):
+        if not event.data:
+            self.driveUsageBar.SetStatusMessage("Your Google Drive usage is shown below:")
             self.driveUsageBar.SetMoviesUsage(self.sync_model.GetMovieUsage())
             self.driveUsageBar.SetDocumentUsage(self.sync_model.GetDocumentUsage())
             self.driveUsageBar.SetOthersUsage(self.sync_model.GetOthersUsage())
             self.driveUsageBar.SetAudioUsage(self.sync_model.GetAudioUsage())
             self.driveUsageBar.SetPhotoUsage(self.sync_model.GetPhotoUsage())
             self.driveUsageBar.RePaint()
+        else:
+            self.driveUsageBar.SetStatusMessage("Sorry, could not calculate your Google Drive usage.")
 
-
-    def onLocalBrowse(self, event):
-        browseDialog = wx.DirDialog(None, "Choose a directory:",
-                                    style = wx.DD_DEFAULT_STYLE | wx.DD_NEW_DIR_BUTTON)
-        if browseDialog.ShowModal() == wx.ID_OK:
-            self.localSyncDirText.SetValue(browseDialog.GetPath())
-        browseDialog.Destroy()
+    def OnUsageCalculationStarted(self, event):
+        self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait")
 
 class GoSyncController(wx.Frame):
     def __init__(self):
-        wx.Frame.__init__(self, None, title="GoSync", size=(700,700), style=mainWindowStyle)
+        wx.Frame.__init__(self, None, title="GoSync", size=(520,300), style=mainWindowStyle)
 
         try:
             self.sync_model = GoSyncModel()
@@ -133,9 +112,9 @@ class GoSyncController(wx.Frame):
         menu = wx.Menu()
 
         if self.sync_model.IsSyncEnabled():
-            menu_txt = 'Start Sync'
+            menu_txt = 'Pause Sync'
         else:
-            menu_txt = 'Stop Sync'
+            menu_txt = 'Resume Sync'
         self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon='resources/sync-menu.png', id=ID_SYNC_TOGGLE)
         self.Bind(wx.EVT_UPDATE_UI, self.OnSyncUIUpdate, id=ID_SYNC_TOGGLE)
 
@@ -155,13 +134,43 @@ class GoSyncController(wx.Frame):
         accountSettingsPage = PageAccountSettings(nb, self.sync_model)
 
         # add the pages to the notebook with the label to show on the tab
-        nb.AddPage(accountSettingsPage, "Account && Options")
+        nb.AddPage(accountSettingsPage, "Account")
 
         # finally, put the notebook in a sizer for the panel to manage
         # the layout
         sizer = wx.BoxSizer()
         sizer.Add(nb, 1, wx.EXPAND)
         p.SetSizer(sizer)
+
+        self.sb = self.CreateStatusBar()
+
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_STARTED,
+                                          self.OnSyncStarted)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_UPDATE,
+                                          self.OnSyncUpdate)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_DONE,
+                                          self.OnSyncDone)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_TIMER,
+                                          self.OnSyncTimer)
+
+        self.sync_model.SetTheBallRolling()
+
+    def OnSyncTimer(self, event):
+        unicode_string = event.data.pop()
+        self.sb.SetStatusText(unicode_string.encode('ascii', 'ignore'))
+
+    def OnSyncStarted(self, event):
+        self.sb.SetStatusText("Sync started...")
+
+    def OnSyncUpdate(self, event):
+        unicode_string = event.data.pop()
+        self.sb.SetStatusText(unicode_string.encode('ascii', 'ignore'))
+
+    def OnSyncDone(self, event):
+        if not event.data:
+            self.sb.SetStatusText("Sync completed.")
+        else:
+            self.sb.SetStatusText("Sync failed. Please check the logs.")
 
     def CreateMenuItem(self, menu, label, func, icon=None, id=None):
         if id:
@@ -173,7 +182,6 @@ class GoSyncController(wx.Frame):
             item.SetBitmap(wx.Bitmap(icon))
 
         if id:
-            print 'Using defined id\n'
             self.Bind(wx.EVT_MENU, func, id=id)
         else:
             self.Bind(wx.EVT_MENU, func, id=item.GetId())
@@ -183,9 +191,9 @@ class GoSyncController(wx.Frame):
 
     def OnSyncUIUpdate(self, event):
         if self.sync_model.IsSyncEnabled():
-            event.SetText('Stop Sync')
+            event.SetText('Pause Sync')
         else:
-            event.SetText('Start Sync')
+            event.SetText('Resume Sync')
 
     def FileSizeHumanize(self, size):
         size = abs(size)
@@ -203,7 +211,10 @@ class GoSyncController(wx.Frame):
             wx.CallAfter(self.Destroy)
 
     def OnToggleSync(self, evt):
-        self.sync_model.StartSync()
+        if self.sync_model.IsSyncEnabled():
+            self.sync_model.StopSync()
+        else:
+            self.sync_model.StartSync()
 
     def OnAbout(self, evt):
         """About GoSync"""

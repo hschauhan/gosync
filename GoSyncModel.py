@@ -1,4 +1,4 @@
-# gosync is an open source google drive sync application for Linux
+# gosync is an open source Google Drive(TM) sync application for Linux
 #
 # Copyright (C) 2015 Himanshu Chauhan
 #
@@ -26,6 +26,7 @@ from threading import Thread
 from apiclient.errors import HttpError
 import logging
 from defines import *
+from GoSyncEvents import *
 
 class FileNotFound(RuntimeError):
     """File was not found on google drive"""
@@ -88,7 +89,6 @@ class GoSyncModel(object):
             sfile.write("save_credentials_backend: file\n")
             sfile.close()
 
-
         self.observer = Observer()
         self.DoAuthenticate()
         self.about_drive = self.authToken.service.about().get().execute()
@@ -97,7 +97,7 @@ class GoSyncModel(object):
         self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
         self.sync_thread.daemon = True
         self.usage_calc_thread.daemon = True
-        self.cancelRunningSync = True
+        self.syncRunning = threading.Event()
 
         self.logger = logging.getLogger(APP_NAME)
         self.logger.setLevel(logging.DEBUG)
@@ -107,10 +107,11 @@ class GoSyncModel(object):
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
 
+    def SetTheBallRolling(self):
         self.sync_thread.start()
         self.usage_calc_thread.start()
-
         self.observer.start()
+        self.syncRunning.set()
 
     def IsUserLoggedIn(self):
         return self.is_logged_in
@@ -355,16 +356,18 @@ class GoSyncModel(object):
                 return
         else:
             self.logger.info('Downloading %s\n' % abs_filepath)
+            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+                                              {'Downloading %s' % abs_filepath})
             dfile.GetContentFile(abs_filepath)
 
     def SyncRemoteDirectory(self, parent, pwd):
-        if self.cancelRunningSync:
+        if not self.syncRunning.is_set():
             return
 
         try:
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
             for f in file_list:
-                if self.cancelRunningSync:
+                if not self.syncRunning.is_set():
                     return
 
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
@@ -373,13 +376,15 @@ class GoSyncModel(object):
                         os.makedirs(abs_dirpath)
                     self.logger.debug('syncing directory %s\n' % f['title'])
                     self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['title']))
+                    if not self.syncRunning.is_set():
+                        return
                 else:
                     if not self.IsGoogleDocument(f):
                         self.DownloadFileByObject(f, os.path.join(self.mirror_directory, pwd))
                     else:
-                        self.logger.debug("%s is a google document\n" % f['title'])
+                        self.logger.info("%s is a google document\n" % f['title'])
         except:
-            self.logger.debug("Failed to sync directory\n")
+            self.logger.error("Failed to sync directory\n")
             raise
 
     def SyncLocalDirectory(self):
@@ -395,16 +400,27 @@ class GoSyncModel(object):
 
     def run(self):
         while True:
-            if not self.cancelRunningSync:
-                self.sync_lock.acquire()
-                self.logger.info("Syncing remote... ")
+            self.syncRunning.wait()
+
+            self.sync_lock.acquire()
+            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
+            self.logger.info("Syncing remote... ")
+            try:
                 self.SyncRemoteDirectory('root', '')
                 self.logger.info("done\n")
-                self.logger.info("Syncing local... ")
-                self.SyncLocalDirectory()
-                self.logger.info("done\n")
-                self.sync_lock.release()
-            time.sleep(60)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
+            except:
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
+            self.sync_lock.release()
+
+            time_left = 600
+
+            while (time_left):
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
+                                                  {'Next Sync: %02d:%02d' % ((time_left/60), (time_left % 60))})
+                time_left -= 1
+                self.syncRunning.wait()
+                time.sleep(1)
 
     def GetFileSize(self, f):
         try:
@@ -438,6 +454,8 @@ class GoSyncModel(object):
     def calculateUsage(self):
         while True:
             self.sync_lock.acquire()
+            GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
+                                              None)
             self.calculatingDriveUsage = True
             self.driveAudioUsage = 0
             self.driveMoviesUsage = 0
@@ -448,16 +466,20 @@ class GoSyncModel(object):
                 self.totalFilesToCheck = self.TotalFilesInDrive()
                 self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
             except:
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
                 self.logger.error("Failed to get the total number of files in drive\n")
 
             try:
                 self.calculateUsageOfFolder('root')
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
             except:
                 self.driveAudioUsage = 0
                 self.driveMoviesUsage = 0
                 self.driveDocumentUsage = 0
                 self.drivePhotoUsage = 0
                 self.driveOthersUsage = 0
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
+
 
             self.calculatingDriveUsage = False
             self.sync_lock.release()
@@ -482,13 +504,14 @@ class GoSyncModel(object):
         return self.drivePhotoUsage
 
     def StartSync(self):
-        self.cancelRunningSync = False
+        self.syncRunning.set()
 
     def StopSync(self):
-        self.cancelRunningSync = True
+        print "stopping the sync process"
+        self.syncRunning.clear()
 
     def IsSyncEnabled(self):
-        return not self.cancelRunningSync
+        return self.syncRunning.is_set()
 
 class FileModificationNotifyHandler(PatternMatchingEventHandler):
     patterns = ["*"]
@@ -498,7 +521,7 @@ class FileModificationNotifyHandler(PatternMatchingEventHandler):
         self.sync_handler = sync_handler
 
     def on_created(self, evt):
-        self.logger.debug("Observer: %s created\n" % evt.src_path)
+        self.sync_handler.logger.debug("Observer: %s created\n" % evt.src_path)
         self.sync_handler.UploadObservedFile(evt.src_path)
 
     def on_moved(self, evt):
