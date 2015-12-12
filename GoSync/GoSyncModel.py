@@ -71,8 +71,7 @@ class GoSyncModel(object):
 
         self.config_path = expanduser("~") + "/.gosync"
         self.credential_file = self.config_path + "/.credentials.json"
-        self.do_sync = True
-        self.settings_file = os.path.dirname(os.path.realpath(__file__)) + "/settings.yaml"
+        self.settings_file = self.config_path + "/settings.yaml"
         self.mirror_directory = expanduser("~") + "/gosync-drive"
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
 
@@ -88,12 +87,12 @@ class GoSyncModel(object):
 
         if not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
-            sfile.write("save_credentials: True")
+            sfile.write("save_credentials: False")
             sfile.write("\n")
             sfile.write("save_credentials_file: ")
             sfile.write(self.credential_file)
             sfile.write("\n")
-            sfile.write("client_config_file: .client_secrets.json\n")
+            sfile.write('client_config_file: ' + os.path.join(self.config_path, 'client_secrets.json') + "\n")
             sfile.write("save_credentials_backend: file\n")
             sfile.close()
 
@@ -130,7 +129,7 @@ class GoSyncModel(object):
 
     def DoAuthenticate(self):
         try:
-            self.authToken = GoogleAuth()
+            self.authToken = GoogleAuth(self.settings_file)
             self.authToken.LocalWebserverAuth()
             self.drive = GoogleDrive(self.authToken)
             self.is_logged_in = True
