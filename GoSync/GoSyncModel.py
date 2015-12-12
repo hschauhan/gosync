@@ -108,7 +108,7 @@ class GoSyncModel(object):
 
         self.logger = logging.getLogger(APP_NAME)
         self.logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler('GoSync.log')
+        fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
         fh.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         fh.setFormatter(formatter)
