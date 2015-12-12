@@ -23,6 +23,8 @@ from defines import *
 from threading import Timer
 from DriveUsageBox import DriveUsageBox
 
+ID_SYNC_TOGGLE = wx.NewId()
+
 mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX)
 
 class PageAccountSettings(wx.Panel):
@@ -131,9 +133,12 @@ class GoSyncController(wx.Frame):
         menu = wx.Menu()
 
         if self.sync_model.IsSyncEnabled():
-            self.CreateMenuItem(menu, '&Stop Background Sync', self.OnStopSync, 'resources/sync-menu.png')
+            menu_txt = 'Start Sync'
         else:
-            self.CreateMenuItem(menu, '&Start Background Sync', self.OnSyncNow, 'resources/sync-menu.png')
+            menu_txt = 'Stop Sync'
+        self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon='resources/sync-menu.png', id=ID_SYNC_TOGGLE)
+        self.Bind(wx.EVT_UPDATE_UI, self.OnSyncUIUpdate, id=ID_SYNC_TOGGLE)
+
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, 'resources/info.png')
         self.CreateMenuItem(menu, 'E&xit', self.OnExit, 'resources/exit.png')
@@ -158,13 +163,29 @@ class GoSyncController(wx.Frame):
         sizer.Add(nb, 1, wx.EXPAND)
         p.SetSizer(sizer)
 
-    def CreateMenuItem(self, menu, label, func, icon=None):
-        item = wx.MenuItem(menu, -1, label)
+    def CreateMenuItem(self, menu, label, func, icon=None, id=None):
+        if id:
+            item = wx.MenuItem(menu, id, label)
+        else:
+            item = wx.MenuItem(menu, -1, label)
+
         if icon:
             item.SetBitmap(wx.Bitmap(icon))
-        self.Bind(wx.EVT_MENU, func, id=item.GetId())
+
+        if id:
+            print 'Using defined id\n'
+            self.Bind(wx.EVT_MENU, func, id=id)
+        else:
+            self.Bind(wx.EVT_MENU, func, id=item.GetId())
+
         menu.AppendItem(item)
         return item
+
+    def OnSyncUIUpdate(self, event):
+        if self.sync_model.IsSyncEnabled():
+            event.SetText('Stop Sync')
+        else:
+            event.SetText('Start Sync')
 
     def FileSizeHumanize(self, size):
         size = abs(size)
@@ -181,16 +202,11 @@ class GoSyncController(wx.Frame):
         if res == wx.ID_YES:
             wx.CallAfter(self.Destroy)
 
-    def OnSyncNow(self, evt):
+    def OnToggleSync(self, evt):
         self.sync_model.StartSync()
-
-    def OnStopSync(self, evt):
-        """Stop syncing with google drive"""
-        self.sync_model.StopSync()
 
     def OnAbout(self, evt):
         """About GoSync"""
-        print "about dialog box"
         about = wx.AboutDialogInfo()
         about.SetIcon(wx.Icon(ABOUT_ICON, wx.BITMAP_TYPE_PNG))
         about.SetName(APP_NAME)
