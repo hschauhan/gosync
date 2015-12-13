@@ -45,8 +45,7 @@ class PageAccountSettings(wx.Panel):
 
         container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,1), size=(685, 155))
 
-        self.driveUsageBar = DriveUsageBox(container_panel, long(aboutdrive['quotaBytesTotal']),
-                                           -1, bar_position=(50,90))
+        self.driveUsageBar = DriveUsageBox(container_panel, long(aboutdrive['quotaBytesTotal']), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
         self.driveUsageBar.SetDocumentUsage(0)
