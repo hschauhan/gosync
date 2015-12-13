@@ -121,12 +121,9 @@ class GoSyncController(wx.Frame):
         menuBar = wx.MenuBar()
         menu = wx.Menu()
 
-        if self.sync_model.IsSyncEnabled():
-            menu_txt = 'Pause Sync'
-        else:
-            menu_txt = 'Resume Sync'
+        menu_txt = 'Pause/Resume Sync'
+
         self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
-        self.Bind(wx.EVT_UPDATE_UI, self.OnSyncUIUpdate, id=ID_SYNC_TOGGLE)
 
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
@@ -152,7 +149,13 @@ class GoSyncController(wx.Frame):
         sizer.Add(nb, 1, wx.EXPAND)
         p.SetSizer(sizer)
 
-        self.sb = self.CreateStatusBar()
+        self.sb = self.CreateStatusBar(2)
+        self.sb.SetStatusWidths([-6, -1])
+
+        if self.sync_model.IsSyncEnabled():
+            self.sb.SetStatusText("Running", 1)
+        else:
+            self.sb.SetStatusText("Paused", 1)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_STARTED,
                                           self.OnSyncStarted)
@@ -199,12 +202,6 @@ class GoSyncController(wx.Frame):
         menu.AppendItem(item)
         return item
 
-    def OnSyncUIUpdate(self, event):
-        if self.sync_model.IsSyncEnabled():
-            event.SetText('Pause Sync')
-        else:
-            event.SetText('Resume Sync')
-
     def FileSizeHumanize(self, size):
         size = abs(size)
         if (size==0):
@@ -223,8 +220,10 @@ class GoSyncController(wx.Frame):
     def OnToggleSync(self, evt):
         if self.sync_model.IsSyncEnabled():
             self.sync_model.StopSync()
+            self.sb.SetStatusText("Paused", 1)
         else:
             self.sync_model.StartSync()
+            self.sb.SetStatusText("Running", 1)
 
     def OnAbout(self, evt):
         """About GoSync"""
