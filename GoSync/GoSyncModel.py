@@ -40,6 +40,8 @@ class MD5ChecksumCalculationFailed(RuntimeError):
     """Calculation of MD5 checksum on a given file failed"""
 class RegularFileUploadFailed(RuntimeError):
     """Upload of a regular file failed"""
+class RegularFileTrashFailed(RuntimeError):
+    """Could not move file to trash"""
 class FileListQueryFailed(RuntimeError):
     """The query of file list failed"""
 
@@ -316,6 +318,31 @@ class GoSyncModel(object):
         self.UploadFile(file_path)
         self.sync_lock.release()
 
+    def TrashFile(self, file_object):
+        try:
+            self.authToken.service.files().trash(fileId=file_object['id']).execute()
+            self.logger.info({"TRASH_FILE: File %s deleted successfully.\n" % file_object['title']})
+        except errors.HttpError, error:
+            self.logger.error("TRASH_FILE: HTTP Error\n")
+            raise RegularFileTrashFailed()
+
+    def TrashObservedFile(self, file_path):
+        self.sync_lock.acquire()
+        drive_path = file_path.split(self.mirror_directory+'/')[1]
+        self.logger.debug({"TRASH_FILE: dirpath to delete: %s\n" % drive_path})
+        try:
+            ftd = self.LocateFileOnDrive(drive_path)
+            try:
+                self.TrashFile(ftd)
+            except RegularFileTrashFailed:
+                self.logger.error({"TRASH_FILE: Failed to move file %s to trash\n" % drive_path})
+                raise
+        except (FileNotFound, FileListQueryFailed, FolderNotFound):
+            self.logger.error({"TRASH_FILE: Failed to locate %s file on drive\n" % drive_path})
+            raise
+
+        self.sync_lock.release()
+
     ####### DOWNLOAD SECTION #######
     def MakeFileListQuery(self, query):
         # Retry 5 times to get the query
@@ -535,4 +562,5 @@ class FileModificationNotifyHandler(PatternMatchingEventHandler):
         print "file %s moved to %s: Not supported yet!\n" % (evt.src_path, evt.dest_path)
 
     def on_deleted(self, evt):
-        print "file %s deleted: Not supported yet!\n" % (evt.src_path)
+        self.sync_handler.logger.info("Observer: file %s deleted on drive.\n" % evt.src_path)
+        self.sync_handler.TrashObservedFile(evt.src_path)
