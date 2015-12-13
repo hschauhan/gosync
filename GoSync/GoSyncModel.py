@@ -105,6 +105,7 @@ class GoSyncModel(object):
         self.sync_thread.daemon = True
         self.usage_calc_thread.daemon = True
         self.syncRunning = threading.Event()
+        self.syncRunning.set()
 
         self.logger = logging.getLogger(APP_NAME)
         self.logger.setLevel(logging.DEBUG)
@@ -118,7 +119,6 @@ class GoSyncModel(object):
         self.sync_thread.start()
         self.usage_calc_thread.start()
         self.observer.start()
-        self.syncRunning.set()
 
     def IsUserLoggedIn(self):
         return self.is_logged_in
