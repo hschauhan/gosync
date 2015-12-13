@@ -43,7 +43,7 @@ class PageAccountSettings(wx.Panel):
         #accountText = wx.StaticText(self, wx.ID_ANY, "Account", pos=(0,0))
         #accountText.SetFont(headerFont)
 
-        container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,1), size=(685, 155))
+        container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,1), size=parent.GetSize())
 
         self.driveUsageBar = DriveUsageBox(container_panel, long(aboutdrive['quotaBytesTotal']), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
@@ -133,7 +133,7 @@ class GoSyncController(wx.Frame):
         self.SetMenuBar(menuBar)
 
         # Here we create a panel and a notebook on the panel
-        p = wx.Panel(self)
+        p = wx.Panel(self, size=self.GetSize())
         nb = wx.Notebook(p)
 
         # create the page windows as children of the notebook
