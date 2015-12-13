@@ -230,6 +230,8 @@ class GoSyncModel(object):
                 raise
             except FileListQueryFailed:
                 raise
+            except:
+                raise
 
     def CreateDirectoryInParent(self, dirname, parent_id='root'):
         upfile = self.drive.CreateFile({'title': dirname,
@@ -337,9 +339,11 @@ class GoSyncModel(object):
             except RegularFileTrashFailed:
                 self.logger.error({"TRASH_FILE: Failed to move file %s to trash\n" % drive_path})
                 raise
+            except:
+                raise
         except (FileNotFound, FileListQueryFailed, FolderNotFound):
             self.logger.error({"TRASH_FILE: Failed to locate %s file on drive\n" % drive_path})
-            raise
+            pass
 
         self.sync_lock.release()
 
@@ -353,6 +357,9 @@ class GoSyncModel(object):
                 if error.resp.reason in ['userRateLimitExceeded', 'quotaExceeded']:
                     self.logger.error("user rate limit/quota exceeded. Will try later\n")
                     time.sleep((2**n) + random.random())
+            except:
+                self.logger.error("MakeFileListQuery: failed with reason %s\n" % error.resp.reason)
+                time.sleep((2**n) + random.random())
 
         self.logger.error("Can't get the connection back after many retries. Bailing out\n")
         raise FileListQueryFailed
@@ -383,36 +390,45 @@ class GoSyncModel(object):
     def DownloadFileByObject(self, file_obj, download_path):
         dfile = self.drive.CreateFile({'id': file_obj['id']})
         abs_filepath = os.path.join(download_path, file_obj['title'])
-        abs_filepath.replace(' ', '\ ')
         if os.path.exists(abs_filepath):
             if self.HashOfFile(abs_filepath) == file_obj['md5Checksum']:
                 self.logger.debug('%s file is same as local. not downloading\n' % abs_filepath)
                 return
+            else:
+                self.logger.info("DownloadFileByObject: Local and remote file with same name but different content. Skipping. (local file: %s)\n" % abs_filepath)
         else:
-            self.logger.info('Downloading %s\n' % abs_filepath)
+            self.logger.info('Downloading %s ' % abs_filepath)
             GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
                                               {'Downloading %s' % abs_filepath})
             dfile.GetContentFile(abs_filepath)
+            self.logger.info('Done\n')
 
     def SyncRemoteDirectory(self, parent, pwd):
         if not self.syncRunning.is_set():
+            self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
             return
 
         try:
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
             for f in file_list:
                 if not self.syncRunning.is_set():
+                    self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
                     return
 
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                     abs_dirpath = os.path.join(self.mirror_directory, pwd, f['title'])
+                    self.logger.debug("Checking directory %s\n" % f['title'])
                     if not os.path.exists(abs_dirpath):
+                        self.logger.debug("creating directory %s " % abs_dirpath)
                         os.makedirs(abs_dirpath)
+                        self.logger.debug("done\n")
                     self.logger.debug('syncing directory %s\n' % f['title'])
                     self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['title']))
                     if not self.syncRunning.is_set():
+                        self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
                         return
                 else:
+                    self.logger.debug("Checking file %s\n" % f['title'])
                     if not self.IsGoogleDocument(f):
                         self.DownloadFileByObject(f, os.path.join(self.mirror_directory, pwd))
                     else:
@@ -423,13 +439,37 @@ class GoSyncModel(object):
 
     def SyncLocalDirectory(self):
         for root, dirs, files in os.walk(self.mirror_directory):
-            for names in dirs:
-                print (os.path.join(root,names))
-                self.UploadFile(os.path.join(root,names))
-
             for names in files:
-                print (os.path.join(root, names))
-                self.UploadFile(os.path.join(root, names))
+                try:
+                    dirpath = os.path.join(root, names)
+                    drivepath = dirpath.split(self.mirror_directory+'/')[1]
+                    f = self.LocateFileOnDrive(drivepath)
+                except FileListQueryFailed:
+                    # if the file list query failed, we can't delete the local file even if
+                    # its gone in remote drive. Let the next sync come and take care of this
+                    # Log the event though
+                    self.logger.info("File check on remote directory has failed. Aborting local sync.\n")
+                    return
+                except:
+                    if os.path.exists(dirpath) and os.path.isfile(dirpath):
+                        self.logger.info("%s has been removed from drive. Deleting local copy\n" % dirpath)
+                        os.remove(dirpath)
+
+            for names in dirs:
+                try:
+                    dirpath = os.path.join(root, names)
+                    drivepath = dirpath.split(self.mirror_directory+'/')[1]
+                    f = self.LocateFileOnDrive(drivepath)
+                except FileListQueryFailed:
+                    # if the file list query failed, we can't delete the local file even if
+                    # its gone in remote drive. Let the next sync come and take care of this
+                    # Log the event though
+                    self.logger.info("Folder check on remote directory has failed. Aborting local sync.\n")
+                    return
+                except:
+                    if os.path.exists(dirpath) and os.path.isdir(dirpath):
+                        self.logger.info("%s folder has been removed from drive. Deleting local copy\n" % dirpath)
+                        os.remove(dirpath)
 
 
     def run(self):
@@ -441,6 +481,9 @@ class GoSyncModel(object):
             self.logger.info("Syncing remote... ")
             try:
                 self.SyncRemoteDirectory('root', '')
+                self.logger.info("done\n")
+                self.logger.info("Syncing local...")
+                self.SyncLocalDirectory()
                 self.logger.info("done\n")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
             except:
