@@ -24,6 +24,7 @@ from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
 from threading import Thread
 from apiclient.errors import HttpError
+from apiclient import errors
 import logging
 from defines import *
 from GoSyncEvents import *
@@ -201,7 +202,7 @@ class GoSyncModel(object):
 
             raise FileNotFound()
         except:
-            raise
+            raise FileNotFound()
 
 
     def LocateFileOnDrive(self, abs_filepath):
@@ -215,22 +216,29 @@ class GoSyncModel(object):
                     fil = self.LocateFileInFolder(filename, f['id'])
                     return fil
                 except FileNotFound:
+                    self.logger.debug("LocateFileOnDrive: File not found.\n")
                     raise
                 except FileListQueryFailed:
+                    self.logger.debug("LocateFileOnDrive: File list query failed\n")
                     raise
             except FolderNotFound:
+                self.logger.debug("LocateFileOnDrive: Folder not found\n")
                 raise
             except FileListQueryFailed:
+                self.logger.debug("LocateFileOnDrive:  %s folder not found\n" % dirpath)
                 raise
         else:
             try:
                 fil = self.LocateFileInFolder(filename)
                 return fil
             except FileNotFound:
+                self.logger.debug("LocateFileOnDrive: File not found.\n")
                 raise
             except FileListQueryFailed:
+                self.logger.debug("LocateFileOnDrive: File list query failed.\n")
                 raise
             except:
+                self.logger.error("LocateFileOnDrive: Unknown error in locating file in drive\n")
                 raise
 
     def CreateDirectoryInParent(self, dirname, parent_id='root'):
@@ -320,6 +328,35 @@ class GoSyncModel(object):
         self.UploadFile(file_path)
         self.sync_lock.release()
 
+    def RenameFile(self, file_object, new_title):
+        try:
+            file = {'title': new_title}
+
+            updated_file = self.authToken.service.files().patch(fileId=file_object['id'],
+                                                                body=file, fields='title').execute()
+            return updated_file
+        except errors.HttpError, error:
+            self.logger.error('An error occurred while renaming file: %s' % error)
+            return None
+        except:
+            self.logger.exception('An unknown error occurred file renaming file\n')
+            return None
+
+    def RenameObservedFile(self, file_path, new_name):
+        self.sync_lock.acquire()
+        drive_path = file_path.split(self.mirror_directory+'/')[1]
+        self.logger.debug("RenameObservedFile: Rename %s to new name %s\n"
+                          % (file_path, new_name))
+        try:
+            ftd = self.LocateFileOnDrive(drive_path)
+            nftd = self.RenameFile(ftd, new_name)
+            if not nftd:
+                self.logger.error("File rename failed\n")
+        except:
+            self.logger.exception("Could not locate file on drive.\n")
+
+        self.sync_lock.release()
+
     def TrashFile(self, file_object):
         try:
             self.authToken.service.files().trash(fileId=file_object['id']).execute()
@@ -346,6 +383,85 @@ class GoSyncModel(object):
             pass
 
         self.sync_lock.release()
+
+    def MoveFile(self, src_file, dst_folder='root', src_folder='root'):
+        try:
+            if dst_folder != 'root':
+                did = dst_folder['id']
+            else:
+                did = 'root'
+
+            if src_folder != 'root':
+                sid = src_folder['id']
+            else:
+                sid = 'root'
+
+            updated_file = self.authToken.service.files().patch(fileId=src_file['id'],
+                                                                body=src_file,
+                                                                addParents=did,
+                                                                removeParents=sid).execute()
+        except:
+            self.logger.exception("move fialed\n")
+
+    def MoveObservedFile(self, src_path, dest_path):
+	from_drive_path = src_path.split(self.mirror_directory+'/')[1]
+	to_drive_path = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
+
+        self.logger.debug("Moving file %s to %s\n" % (from_drive_path, to_drive_path))
+
+	try:
+	    ftm = self.LocateFileOnDrive(from_drive_path)
+            self.logger.debug("MoveObservedFile: Found source file on drive\n")
+            if os.path.dirname(from_drive_path) == '':
+                sf = 'root'
+            else:
+                sf = self.LocateFolderOnDrive(os.path.dirname(from_drive_path))
+            self.logger.debug("MoveObservedFile: Found source folder on drive\n")
+            try:
+                if to_drive_path == '':
+                    df = 'root'
+                else:
+                    df = self.LocateFolderOnDrive(to_drive_path)
+                self.logger.debug("MoveObservedFile: Found destination folder on drive\n")
+                try:
+                    self.logger.debug("MovingFile() ")
+                    self.MoveFile(ftm, df, sf)
+                    self.logger.debug("done\n")
+                except (Unkownerror, FileMoveFailed):
+                    self.logger.error("MovedObservedFile: Failed\n")
+                    return
+                except:
+                    self.logger.error("?????\n")
+                    return
+            except FolderNotFound:
+                self.logger.error("MoveObservedFile: Couldn't locate destination folder on drive.\n")
+                return
+            except:
+                self.logger.error("MoveObservedFile: Unknown error while locating destination folder on drive.\n")
+                return
+	except FileNotFound:
+            self.logger.error("MoveObservedFile: Couldn't locate file on drive.\n")
+            return
+	except FileListQueryFailed:
+	    self.logger.error("MoveObservedFile: File Query failed. aborting.\n")
+	    return
+	except FolderNotFound:
+	    self.logger.error("MoveObservedFile: Folder not found\n")
+	    return
+	except:
+	    self.logger.error("MoveObservedFile: Unknown error while moving file.\n")
+	    return
+
+    def HandleMovedFile(self, src_path, dest_path):
+        drive_path1 = os.path.dirname(src_path.split(self.mirror_directory+'/')[1])
+	drive_path2 = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
+
+	if drive_path1 == drive_path2:
+            self.logger.debug("Rename file\n")
+	    self.RenameObservedFile(src_path, self.PathLeaf(dest_path))
+	else:
+            self.logger.debug("Move file\n")
+	    self.MoveObservedFile(src_path, dest_path)
 
     ####### DOWNLOAD SECTION #######
     def MakeFileListQuery(self, query):
@@ -602,7 +718,8 @@ class FileModificationNotifyHandler(PatternMatchingEventHandler):
         self.sync_handler.UploadObservedFile(evt.src_path)
 
     def on_moved(self, evt):
-        print "file %s moved to %s: Not supported yet!\n" % (evt.src_path, evt.dest_path)
+        self.sync_handler.logger.info("Observer: file %s moved to %s: Not supported yet!\n" % (evt.src_path, evt.dest_path))
+        self.sync_handler.HandleMovedFile(evt.src_path, evt.dest_path)
 
     def on_deleted(self, evt):
         self.sync_handler.logger.info("Observer: file %s deleted on drive.\n" % evt.src_path)

@@ -32,3 +32,6 @@ def main():
     controller.Center()
     controller.Show()
     app.MainLoop()
+
+if __name__ == "__main__":
+    main()
