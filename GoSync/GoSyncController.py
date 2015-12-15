@@ -40,12 +40,7 @@ class PageAccountSettings(wx.Panel):
         font = wx.Font(11, wx.SWISS, wx.NORMAL, wx.NORMAL)
         headerFont = wx.Font(11.5, wx.SWISS, wx.NORMAL, wx.BOLD)
 
-        #accountText = wx.StaticText(self, wx.ID_ANY, "Account", pos=(0,0))
-        #accountText.SetFont(headerFont)
-
-        container_panel = wx.Panel(self, -1, style=wx.SUNKEN_BORDER, pos=(5,1), size=parent.GetSize())
-
-        self.driveUsageBar = DriveUsageBox(container_panel, long(aboutdrive['quotaBytesTotal']), -1)
+        self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['quotaBytesTotal']), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
         self.driveUsageBar.SetDocumentUsage(0)
@@ -57,21 +52,12 @@ class PageAccountSettings(wx.Panel):
 
         mainsizer = wx.BoxSizer(wx.VERTICAL)
 
-        #mainsizer.Add(accountText, 0, wx.ALL|wx.EXPAND, 5)
-        mainsizer.Add(container_panel, 0, wx.ALL|wx.EXPAND, 5)
         self.SetSizerAndFit(mainsizer)
-
-        #self.updateTimer = wx.Timer(self)
-        #self.Bind(wx.EVT_TIMER, self.UpdateUsageBar, self.updateTimer)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
                                           self.OnUsageCalculationStarted)
-        #GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_UPDATE,
-        #                                  self.UpdateUsageBar)
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
                                           self.OnUsageCalculationDone)
-
-        #self.updateTimer.Start(10000, False)
 
     def OnUsageCalculationDone(self, event):
         if not event.data:
