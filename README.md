@@ -4,45 +4,53 @@ GoSync is an open source Google Drive client for Linux written in python languag
 It's not perfect yet but it does the job. GoSync is released under GNU GPL version 2.0.
 
 What it does?
--------------
-It can sync everything from the root folder. By default, the sync is not turned on.
-You have to enable it by clicking "Start background sync" menu item. Currently,
-it only syncs everything from server. GoSync monitors for the file changes in the
-local sync directory. When a new file is created, it is immediately uploaded to the
-Google Drive.
+------------
+It syncs everything from the drive. By default, the sync is turned on. You can pause
+it by clicking "Pause/Resume Sync" menu item. GoSync also monitors for the file changes
+in the local mirror directory. When a new file is created in local mirror, it is
+immediately uploaded to the Google Drive.
 
-What it doesn't do?
--------------------
-While eventually GoSYnc will do everything that other clients do on the other operating
-systems, there are some limitations to it right now:
+GoSync does the sync every 10 minutes. It is not configurable right now. This is called
+as "regular sync".
 
-    1. During the sync, it only downloads the files from the server. Any preexisting files
-       in the sync directory are not uploaded.
-    2. File modification, delete or move are not supported yet.
+There are some limitations as of now:
+1. You cannot choose which directories to sync.
+   It just syncs everything.
+2. While its calculating the drive usage, the progress
+   is not shown. If the usage of drive is high, it takes
+   time to calculate the total categorical usage.
 
 This will be fixed in future versions.
 
 What you need to make it work?
 ------------------------------
-Until finally there is an egg for GoSync, the dependencies are to installed manually. GoSync
-doesn't really depend on many libraries. You need to install the following libraries before
-using GoSync:
+Starting from version 0.3, GoSync is available for installation via pip. Simply run:
 
-    1. python (version >= 2.7. Version 3 not tested yet)
-    2. wxPythong (version >= 2.8) 
-    3. python-googleapi 
-    4. pip 
-    5. watchdog (to be installed from pip)
-    6. pydrive (to be installed from pip)
+pip install GoSync
 
-For libraries you need only that many. But there is one more essential thing. The "client_secrets.json"
-file. I am not distributing my "client_secrets.json" because I am not distributing GoSync commercially.
-A very good get started page can be found at https://developers.google.com/drive/web/quickstart/python.
-When you are done creating the .json file, download it and keep it inside GoSync directory as
-".client_secrets.json". Please note the "." before the name.
+This will also install the dependencies.
 
-After all this you should get it working. In case you have some problem you can send me mail at
-hschauhan at nulltrace dot org or hs dot chauhan at gmail dot com.
+If you have cloned the source from GitHub, the dependencies should be installed manually.
+You need to install the following libraries before using GoSync:
+
+1. python (version >= 2.7. Version 3 not tested yet)
+2. wxPython  (version >= 2.8)
+3. python-googleapi
+4. pip
+5. watchdog (to be installed from pip)
+6. PyDrive (to be installed from pip)
+
+There is one more essential thing. The "client_secrets.json" file. I am not distributing
+my "client_secrets.json" because I am not distributing GoSync commercially.
+
+A very good get started page can be found at (https://developers.google.com/drive/web/quickstart/python)
+and a step-by-step process at (https://github.com/jay0lee/GAM/wiki/Creating-client_secrets.json-and-oauth2service.json).
+
+When you are done creating the client_secrets.json file, download it and keep it inside
+.gosync directory in your home directory.
+
+In case you have some problem you can send me mail at hschauhan at nulltrace dot org or
+hs dot chauhan at gmail dot com.
 
 Where to get the code?
 ----------------------
