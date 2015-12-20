@@ -20,7 +20,7 @@ import wx, math
 
 class DriveUsageBox(wx.Panel):
     def __init__(self, parent, drive_size_bytes, id=wx.ID_ANY):
-        wx.Panel.__init__(self, parent, id=wx.ID_ANY)
+        wx.Panel.__init__(self, parent, id=wx.ID_ANY, size=parent.GetSize())
 
         font = wx.Font(10, wx.SWISS, wx.NORMAL, wx.NORMAL)
 
@@ -42,11 +42,12 @@ class DriveUsageBox(wx.Panel):
         self.t1.SetFont(font)
 
         self.basePanel = wx.Panel(self, id, self.bar_position, bar_size, wx.SUNKEN_BORDER)
-        self.audioPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
-        self.moviesPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
-        self.documentPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0),(1, self.barHeight))
-        self.photoPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
-        self.othersPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (1, self.barHeight))
+
+        self.audioPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (0, self.barHeight))
+        self.moviesPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (0, self.barHeight))
+        self.documentPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0),(0, self.barHeight))
+        self.photoPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (0, self.barHeight))
+        self.othersPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (0, self.barHeight))
 
         self.basePanel.SetBackgroundColour(wx.WHITE)
 
@@ -173,7 +174,8 @@ class DriveUsageBox(wx.Panel):
 
         cpos = 0
         for ctuple in panelList:
-            pwidth = (self.barWidth * ctuple[1])/100
+            #pwidth = (self.barWidth * ctuple[1])/100
+            pwidth = (self.GetSize()[0] * ctuple[1])/100
             if (pwidth < 0):
                 pwidth = 0
 

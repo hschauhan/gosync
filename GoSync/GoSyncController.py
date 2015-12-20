@@ -31,15 +31,11 @@ HERE=os.path.abspath(os.path.dirname(__file__))
 
 class PageAccountSettings(wx.Panel):
     def __init__(self, parent, sync_model):
-        wx.Panel.__init__(self, parent)
+        wx.Panel.__init__(self, parent, size=parent.GetSize())
 
         self.sync_model = sync_model
 
         aboutdrive = sync_model.DriveInfo()
-
-        font = wx.Font(11, wx.SWISS, wx.NORMAL, wx.NORMAL)
-        headerFont = wx.Font(11.5, wx.SWISS, wx.NORMAL, wx.BOLD)
-
         self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['quotaBytesTotal']), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
