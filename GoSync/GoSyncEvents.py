@@ -25,6 +25,7 @@ GOSYNC_EVENT_SYNC_STARTED = '_gosync_sync_started'
 GOSYNC_EVENT_SYNC_UPDATE = '_gosync_sync_update'
 GOSYNC_EVENT_SYNC_DONE = '_gosync_sync_done'
 GOSYNC_EVENT_SYNC_TIMER = '_gosync_sync_timer'
+GOSYNC_EVENT_SYNC_INV_FOLDER = '_gosync_sync_invalid_folder'
 
 GOSYNC_EVENT_ID_SYNC_STARTED = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_UPDATE = wx.NewId()
@@ -33,6 +34,7 @@ GOSYNC_EVENT_ID_CALCULATE_USAGE_STARTED = wx.NewId()
 GOSYNC_EVENT_ID_CALCULATE_USAGE_UPDATE = wx.NewId()
 GOSYNC_EVENT_ID_CALCULATE_USAGE_DONE = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_TIMER = wx.NewId()
+GOSYNC_EVENT_ID_SYNC_INV_FOLDER = wx.NewId()
 
 class GoSyncEvent(wx.PyEvent):
     def __init__(self, event, data):
@@ -51,14 +53,16 @@ class GoSyncEventController(object):
                     GOSYNC_EVENT_CALCULATE_USAGE_STARTED: GOSYNC_EVENT_ID_CALCULATE_USAGE_STARTED,
                     GOSYNC_EVENT_CALCULATE_USAGE_UPDATE: GOSYNC_EVENT_ID_CALCULATE_USAGE_UPDATE,
                     GOSYNC_EVENT_CALCULATE_USAGE_DONE: GOSYNC_EVENT_ID_CALCULATE_USAGE_DONE,
-                    GOSYNC_EVENT_SYNC_TIMER: GOSYNC_EVENT_ID_SYNC_TIMER}
+                    GOSYNC_EVENT_SYNC_TIMER: GOSYNC_EVENT_ID_SYNC_TIMER,
+                    GOSYNC_EVENT_SYNC_INV_FOLDER: GOSYNC_EVENT_ID_SYNC_INV_FOLDER}
     _sync_listeners = {GOSYNC_EVENT_SYNC_STARTED:[],
                        GOSYNC_EVENT_SYNC_UPDATE: [],
                        GOSYNC_EVENT_SYNC_DONE: [],
                        GOSYNC_EVENT_CALCULATE_USAGE_STARTED: [],
                        GOSYNC_EVENT_CALCULATE_USAGE_UPDATE: [],
                        GOSYNC_EVENT_CALCULATE_USAGE_DONE: [],
-                       GOSYNC_EVENT_SYNC_TIMER: []}
+                       GOSYNC_EVENT_SYNC_TIMER: [],
+                       GOSYNC_EVENT_SYNC_INV_FOLDER: []}
 
     def __new__(cls, *args, **kwargs):
         if not cls._event_controller_instance:

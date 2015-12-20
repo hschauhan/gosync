@@ -23,13 +23,14 @@ from defines import *
 from threading import Timer
 from DriveUsageBox import DriveUsageBox
 from GoSyncEvents import *
+from GoSyncSettingsPage import SettingsPage
 
 ID_SYNC_TOGGLE = wx.NewId()
 
 mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX)
 HERE=os.path.abspath(os.path.dirname(__file__))
 
-class PageAccountSettings(wx.Panel):
+class PageAccount(wx.Panel):
     def __init__(self, parent, sync_model):
         wx.Panel.__init__(self, parent, size=parent.GetSize())
 
@@ -68,11 +69,11 @@ class PageAccountSettings(wx.Panel):
             self.driveUsageBar.SetStatusMessage("Sorry, could not calculate your Google Drive usage.")
 
     def OnUsageCalculationStarted(self, event):
-        self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait")
+        self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
 
 class GoSyncController(wx.Frame):
     def __init__(self):
-        wx.Frame.__init__(self, None, title="GoSync", size=(520,300), style=mainWindowStyle)
+        wx.Frame.__init__(self, None, title="GoSync", size=(520,400), style=mainWindowStyle)
 
         try:
             self.sync_model = GoSyncModel()
@@ -87,7 +88,7 @@ class GoSyncController(wx.Frame):
             sys.exit(1)
         except:
             dial = wx.MessageDialog(None, 'GoSync failed to initialize\n',
-                                    'Error', wx.ID_OK | wx.ICON_EXCLAMATION)
+                                    'Error', wx.OK | wx.ICON_EXCLAMATION)
             res = dial.ShowModal()
             sys.exit(1)
 
@@ -119,10 +120,12 @@ class GoSyncController(wx.Frame):
         nb = wx.Notebook(p)
 
         # create the page windows as children of the notebook
-        accountSettingsPage = PageAccountSettings(nb, self.sync_model)
+        accountPage = PageAccount(nb, self.sync_model)
+        settingsPage = SettingsPage(nb, self.sync_model)
 
         # add the pages to the notebook with the label to show on the tab
-        nb.AddPage(accountSettingsPage, "Account")
+        nb.AddPage(accountPage, "Account")
+        nb.AddPage(settingsPage, "Settings")
 
         # finally, put the notebook in a sizer for the panel to manage
         # the layout
@@ -146,8 +149,15 @@ class GoSyncController(wx.Frame):
                                           self.OnSyncDone)
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_TIMER,
                                           self.OnSyncTimer)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_INV_FOLDER,
+                                          self.OnSyncInvalidFolder)
 
         self.sync_model.SetTheBallRolling()
+
+    def OnSyncInvalidFolder(self, event):
+        dial = wx.MessageDialog(None, 'Some of the folders to be sync\'ed were not found on remote server.\nPlease check.\n',
+                                'Error', wx.OK | wx.ICON_EXCLAMATION)
+        res = dial.ShowModal()
 
     def OnSyncTimer(self, event):
         unicode_string = event.data.pop()

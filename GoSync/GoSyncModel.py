@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import sys, os, wx, ntpath, defines, threading, hashlib, time
+import sys, os, wx, ntpath, defines, threading, hashlib, time, copy
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from os.path import expanduser
@@ -28,6 +28,8 @@ from apiclient import errors
 import logging
 from defines import *
 from GoSyncEvents import *
+from GoSyncDriveTree import GoogleDriveTree
+import json
 
 class ClientSecretsNotFound(RuntimeError):
     """Client secrets file was not found"""
@@ -45,6 +47,8 @@ class RegularFileTrashFailed(RuntimeError):
     """Could not move file to trash"""
 class FileListQueryFailed(RuntimeError):
     """The query of file list failed"""
+class ConfigLoadFailed(RuntimeError):
+    """Failed to load the GoSync configuration file"""
 
 audio_file_mimelist = ['audio/mpeg', 'audio/x-mpeg-3', 'audio/mpeg3', 'audio/aiff', 'audio/x-aiff']
 movie_file_mimelist = ['video/mp4', 'video/x-msvideo', 'video/mpeg', 'video/flv', 'video/quicktime']
@@ -77,6 +81,9 @@ class GoSyncModel(object):
         self.settings_file = self.config_path + "/settings.yaml"
         self.mirror_directory = expanduser("~") + "/gosync-drive"
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
+        self.sync_selection = []
+        self.config_file = os.path.join(os.environ['HOME'], '.gosync', 'gosyncrc')
+        self.config=None
 
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
@@ -87,6 +94,14 @@ class GoSyncModel(object):
 
         if not os.path.exists(self.client_secret_file):
             raise ClientSecretsNotFound()
+
+        if not os.path.exists(self.config_file):
+            self.CreateDefaultConfigFile()
+
+        try:
+            self.LoadConfig()
+        except:
+            raise
 
         if not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
@@ -108,7 +123,9 @@ class GoSyncModel(object):
         self.sync_thread.daemon = True
         self.usage_calc_thread.daemon = True
         self.syncRunning = threading.Event()
-        self.syncRunning.set()
+        self.syncRunning.clear()
+        self.usageCalculateEvent = threading.Event()
+        self.usageCalculateEvent.set()
 
         self.logger = logging.getLogger(APP_NAME)
         self.logger.setLevel(logging.DEBUG)
@@ -117,6 +134,7 @@ class GoSyncModel(object):
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
+        self.driveTree = GoogleDriveTree()
 
     def SetTheBallRolling(self):
         self.sync_thread.start()
@@ -129,6 +147,32 @@ class GoSyncModel(object):
     def HashOfFile(self, abs_filepath):
         data = open(abs_filepath, "r").read()
         return hashlib.md5(data).hexdigest()
+
+    def CreateDefaultConfigFile(self):
+        f = open(self.config_file, 'w')
+        self.sync_selection = [['root', '']]
+        json.dump({'Sync Selection' : self.sync_selection}, f)
+        f.close()
+
+    def LoadConfig(self):
+        try:
+            f = open(self.config_file, 'r')
+            try:
+                self.config = json.load(f)
+                self.sync_selection = self.config['Sync Selection']
+                f.close()
+            except:
+                raise ConfigLoadFailed()
+        except:
+            raise ConfigLoadFailed()
+
+    def SaveConfig(self):
+        f = open(self.config_file, 'w')
+        f.truncate()
+        if not self.sync_selection:
+            sync_selection = [['root', '']]
+        json.dump({'Sync Selection' : self.sync_selection}, f)
+        f.close()
 
     def DoAuthenticate(self):
         try:
@@ -401,7 +445,7 @@ class GoSyncModel(object):
                                                                 addParents=did,
                                                                 removeParents=sid).execute()
         except:
-            self.logger.exception("move fialed\n")
+            self.logger.exception("move failed\n")
 
     def MoveObservedFile(self, src_path, dest_path):
 	from_drive_path = src_path.split(self.mirror_directory+'/')[1]
@@ -511,7 +555,7 @@ class GoSyncModel(object):
                 self.logger.debug('%s file is same as local. not downloading\n' % abs_filepath)
                 return
             else:
-                self.logger.info("DownloadFileByObject: Local and remote file with same name but different content. Skipping. (local file: %s)\n" % abs_filepath)
+                self.logger.debug("DownloadFileByObject: Local and remote file with same name but different content. Skipping. (local file: %s)\n" % abs_filepath)
         else:
             self.logger.info('Downloading %s ' % abs_filepath)
             GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
@@ -523,6 +567,9 @@ class GoSyncModel(object):
         if not self.syncRunning.is_set():
             self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
             return
+
+        if not os.path.exists(os.path.join(self.mirror_directory, pwd)):
+            os.makedirs(os.path.join(self.mirror_directory, pwd))
 
         try:
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
@@ -588,29 +635,60 @@ class GoSyncModel(object):
                         os.remove(dirpath)
 
 
+    def validate_sync_settings(self):
+        for d in self.sync_selection:
+            if d[0] != 'root':
+                try:
+                    f = self.LocateFolderOnDrive(d[0])
+                    if f['id'] != d[1]:
+                        raise FolderNotFound()
+                    break
+                except FolderNotFound:
+                    raise
+                except:
+                    raise FolderNotFound()
+            else:
+                if d[1] != '':
+                    raise FolderNotFound()
+
     def run(self):
         while True:
             self.syncRunning.wait()
 
             self.sync_lock.acquire()
-            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
-            self.logger.info("Syncing remote... ")
+
             try:
-                self.SyncRemoteDirectory('root', '')
-                self.logger.info("done\n")
+                self.validate_sync_settings()
+            except:
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_INV_FOLDER, 0)
+                self.syncRunning.clear()
+                self.sync_lock.release()
+                continue
+
+            try:
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
+                for d in self.sync_selection:
+                    self.logger.info("Syncing remote (%s)... " % d[0])
+                    if d[0] != 'root':
+                        self.SyncRemoteDirectory(d[1], d[0])
+                    else:
+                        self.SyncRemoteDirectory('root', '')
+                    self.logger.info("done\n")
                 self.logger.info("Syncing local...")
                 self.SyncLocalDirectory()
                 self.logger.info("done\n")
+                self.usageCalculateEvent.set()
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
             except:
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
+
             self.sync_lock.release()
 
             time_left = 600
 
             while (time_left):
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
-                                                  {'Next Sync: %02d:%02d' % ((time_left/60), (time_left % 60))})
+                                                  {'Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))})
                 time_left -= 1
                 self.syncRunning.wait()
                 time.sleep(1)
@@ -628,6 +706,7 @@ class GoSyncModel(object):
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
             for f in file_list:
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
+                    self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
                     self.calculateUsageOfFolder(f['id'])
                 else:
                     if not self.IsGoogleDocument(f):
@@ -646,6 +725,9 @@ class GoSyncModel(object):
 
     def calculateUsage(self):
         while True:
+            self.usageCalculateEvent.wait()
+            self.usageCalculateEvent.clear()
+
             self.sync_lock.acquire()
             GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
                                               None)
@@ -676,7 +758,12 @@ class GoSyncModel(object):
 
             self.calculatingDriveUsage = False
             self.sync_lock.release()
-            time.sleep(300)
+
+    def GetDriveDirectoryTree(self):
+        self.sync_lock.acquire()
+        ref_tree = copy.deepcopy(self.driveTree)
+        self.sync_lock.release()
+        return ref_tree
 
     def IsCalculatingDriveUsage(self):
         return self.calculatingDriveUsage
@@ -700,11 +787,23 @@ class GoSyncModel(object):
         self.syncRunning.set()
 
     def StopSync(self):
-        print "stopping the sync process"
         self.syncRunning.clear()
 
     def IsSyncEnabled(self):
         return self.syncRunning.is_set()
+
+    def SetSyncSelection(self, folder):
+        if folder == 'root':
+            self.sync_selection = [['root', '']]
+        else:
+            for d in self.sync_selection:
+                if d[0] == 'root':
+                    self.sync_selection = []
+            self.sync_selection.append([folder.GetPath(), folder.GetId()])
+        self.SaveConfig()
+
+    def GetSyncList(self):
+        return copy.deepcopy(self.sync_selection)
 
 class FileModificationNotifyHandler(PatternMatchingEventHandler):
     patterns = ["*"]
