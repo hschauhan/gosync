@@ -5,10 +5,7 @@ from pydrive.auth import GoogleAuth
 from GoSyncEvents import *
 
 class GoSyncDriveTree(CT.CustomTreeCtrl):
-    """"""
-
     def __init__(self, parent, *args, **kw):
-        """"""
         CT.CustomTreeCtrl.__init__(self, parent, *args, **kw)
 
     def GetCheckedItems(self, itemParent=None, checkedItems=None):
@@ -96,7 +93,6 @@ class SettingsPage(wx.Panel):
 
         while child:
             child_data = self.dstc.GetPyData(child)
-            print "%s [%s]\n" % (child_data.GetName(), child_data.GetId())
             for d in checklist:
                 if child_data.GetId() == d[1]:
                     itemToBeChecked.append(child)
@@ -112,7 +108,6 @@ class SettingsPage(wx.Panel):
         self.dstc_root = self.dstc.AddRoot("Google Drive Root")
         self.MakeDriveTree(driveTree.GetRoot(), self.dstc_root)
         self.dstc.ExpandAll()
-        print "Syncing list\n"
         sync_list = self.sync_model.GetSyncList()
         for d in sync_list:
             if d[0] == 'root':
