@@ -133,6 +133,9 @@ class GoSyncModel(object):
             raise
 
 
+        self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self),
+                                                     self.mirror_directory, recursive=True)
+
         self.sync_lock = threading.Lock()
         self.sync_thread = threading.Thread(target=self.run)
         self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
@@ -220,8 +223,6 @@ class GoSyncModel(object):
             self.authToken.LocalWebserverAuth()
             self.drive = GoogleDrive(self.authToken)
             self.is_logged_in = True
-            self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self),
-                                                         self.mirror_directory, recursive=True)
         except:
             dial = wx.MessageDialog(None, "Authentication Rejected!\n",
                                     'Information', wx.ID_OK | wx.ICON_EXCLAMATION)
