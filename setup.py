@@ -33,7 +33,7 @@ setup(
         'GoSync':['resources/*.png'],
     },
 
-    install_requires=['wxpython', 'google-api-python-client', 'pydrive', 'watchdog'],
+    install_requires=['google-api-python-client', 'pydrive', 'watchdog'],
     entry_points={
         'console_scripts':[
             'GoSync=GoSync.GoSync:main',
