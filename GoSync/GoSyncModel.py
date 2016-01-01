@@ -867,6 +867,9 @@ class GoSyncModel(object):
             for d in self.sync_selection:
                 if d[0] == 'root':
                     self.sync_selection = []
+            for d in self.sync_selection:
+                if d[0] == folder.GetPath() and d[1] == folder.GetId():
+                    return
             self.sync_selection.append([folder.GetPath(), folder.GetId()])
         self.config_dict['Sync Selection'] = self.sync_selection
         self.SaveConfig()
