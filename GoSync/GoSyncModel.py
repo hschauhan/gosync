@@ -81,6 +81,7 @@ class GoSyncModel(object):
         self.settings_file = self.config_path + "/settings.yaml"
         self.mirror_directory = expanduser("~") + "/gosync-drive"
         self.fcount = 0
+        self.updates_done = 0
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
         self.sync_selection = []
         self.config_file = os.path.join(os.environ['HOME'], '.gosync', 'gosyncrc')
@@ -560,9 +561,11 @@ class GoSyncModel(object):
                 self.logger.debug("DownloadFileByObject: Local and remote file with same name but different content. Skipping. (local file: %s)\n" % abs_filepath)
         else:
             self.logger.info('Downloading %s ' % abs_filepath)
+            fd = abs_filepath.split(self.mirror_directory+'/')[1]
             GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
-                                              {'Downloading %s' % abs_filepath})
+                                              {'Downloading %s' % fd})
             dfile.GetContentFile(abs_filepath)
+            self.updates_done = 1
             self.logger.info('Done\n')
 
     def SyncRemoteDirectory(self, parent, pwd):
@@ -679,7 +682,8 @@ class GoSyncModel(object):
                 self.logger.info("Syncing local...")
                 self.SyncLocalDirectory()
                 self.logger.info("done\n")
-                self.usageCalculateEvent.set()
+                if self.updates_done:
+                    self.usageCalculateEvent.set()
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
             except:
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
@@ -724,6 +728,7 @@ class GoSyncModel(object):
                             self.driveDocumentUsage += self.GetFileSize(f)
                         else:
                             self.driveOthersUsage += self.GetFileSize(f)
+
         except:
             raise
 
@@ -735,6 +740,7 @@ class GoSyncModel(object):
             self.sync_lock.acquire()
             GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
                                               None)
+            self.updates_done = 0
             self.calculatingDriveUsage = True
             self.driveAudioUsage = 0
             self.driveMoviesUsage = 0
