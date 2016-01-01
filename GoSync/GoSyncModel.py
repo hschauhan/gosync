@@ -29,7 +29,7 @@ import logging
 from defines import *
 from GoSyncEvents import *
 from GoSyncDriveTree import GoogleDriveTree
-import json
+import json, pickle
 
 class ClientSecretsNotFound(RuntimeError):
     """Client secrets file was not found"""
@@ -75,27 +75,54 @@ class GoSyncModel(object):
         self.driveDocumentUsage = 0
         self.driveOthersUsage = 0
         self.totalFilesToCheck = 0
-
-        self.config_path = expanduser("~") + "/.gosync"
-        self.credential_file = self.config_path + "/.credentials.json"
-        self.settings_file = self.config_path + "/settings.yaml"
-        self.mirror_directory = expanduser("~") + "/gosync-drive"
+        self.savedTotalSize = 0
         self.fcount = 0
         self.updates_done = 0
+
+        self.config_path = os.path.join(os.environ['HOME'], ".gosync")
+        self.credential_file = os.path.join(self.config_path, "credentials.json")
+        self.settings_file = os.path.join(self.config_path, "settings.yaml")
+        self.base_mirror_directory = os.path.join(os.environ['HOME'], "Google Drive")
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
         self.sync_selection = []
         self.config_file = os.path.join(os.environ['HOME'], '.gosync', 'gosyncrc')
+        self.config_dict = {}
+        self.account_dict = {}
+        self.drive_usage_dict = {}
         self.config=None
 
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
             raise ClientSecretsNotFound()
 
-        if not os.path.exists(self.mirror_directory):
-            os.mkdir(self.mirror_directory, 0755)
+        if not os.path.exists(self.base_mirror_directory):
+            os.mkdir(self.base_mirror_directory, 0755)
 
         if not os.path.exists(self.client_secret_file):
             raise ClientSecretsNotFound()
+
+        if not os.path.exists(self.settings_file) or \
+                not os.path.isfile(self.settings_file):
+            sfile = open(self.settings_file, 'w')
+            sfile.write("save_credentials: False")
+            sfile.write("\n")
+            sfile.write("save_credentials_file: ")
+            sfile.write(self.credential_file)
+            sfile.write("\n")
+            sfile.write('client_config_file: ' + self.client_secret_file + "\n")
+            sfile.write("save_credentials_backend: file\n")
+            sfile.close()
+
+        self.observer = Observer()
+        self.DoAuthenticate()
+        self.about_drive = self.authToken.service.about().get().execute()
+        self.user_email = self.about_drive['user']['emailAddress']
+
+        self.mirror_directory = os.path.join(self.base_mirror_directory, self.user_email)
+        if not os.path.exists(self.mirror_directory):
+            os.mkdir(self.mirror_directory, 0755)
+
+        self.tree_pickle_file = os.path.join(self.config_path, 'gtree-' + self.user_email + '.pick')
 
         if not os.path.exists(self.config_file):
             self.CreateDefaultConfigFile()
@@ -105,20 +132,7 @@ class GoSyncModel(object):
         except:
             raise
 
-        if not os.path.isfile(self.settings_file):
-            sfile = open(self.settings_file, 'w')
-            sfile.write("save_credentials: False")
-            sfile.write("\n")
-            sfile.write("save_credentials_file: ")
-            sfile.write(self.credential_file)
-            sfile.write("\n")
-            sfile.write('client_config_file: ' + os.path.join(self.config_path, 'client_secrets.json') + "\n")
-            sfile.write("save_credentials_backend: file\n")
-            sfile.close()
 
-        self.observer = Observer()
-        self.DoAuthenticate()
-        self.about_drive = self.authToken.service.about().get().execute()
         self.sync_lock = threading.Lock()
         self.sync_thread = threading.Thread(target=self.run)
         self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
@@ -136,7 +150,10 @@ class GoSyncModel(object):
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
-        self.driveTree = GoogleDriveTree()
+        if not os.path.exists(self.tree_pickle_file):
+            self.driveTree = GoogleDriveTree()
+        else:
+            self.driveTree = pickle.load(open(self.tree_pickle_file, "rb"))
 
     def SetTheBallRolling(self):
         self.sync_thread.start()
@@ -152,8 +169,9 @@ class GoSyncModel(object):
 
     def CreateDefaultConfigFile(self):
         f = open(self.config_file, 'w')
-        self.sync_selection = [['root', '']]
-        json.dump({'Sync Selection' : self.sync_selection}, f)
+        self.config_dict['Sync Selection'] = [['root', '']]
+        self.account_dict[self.user_email] = self.config_dict
+        json.dump(self.account_dict, f)
         f.close()
 
     def LoadConfig(self):
@@ -161,7 +179,24 @@ class GoSyncModel(object):
             f = open(self.config_file, 'r')
             try:
                 self.config = json.load(f)
-                self.sync_selection = self.config['Sync Selection']
+                try:
+                    self.config_dict = self.config[self.user_email]
+                    self.sync_selection = self.config_dict['Sync Selection']
+                    print self.config_dict['Drive Usage']
+                    try:
+                        self.drive_usage_dict = self.config_dict['Drive Usage']
+                        self.totalFilesToCheck = self.drive_usage_dict['Total Files']
+                        self.savedTotalSize = self.drive_usage_dict['Total Size']
+                        self.driveAudioUsage = self.drive_usage_dict['Audio Size']
+                        self.driveMoviesUsage = self.drive_usage_dict['Movies Size']
+                        self.driveDocumentUsage = self.drive_usage_dict['Document Size']
+                        self.drivePhotoUsage = self.drive_usage_dict['Photo Size']
+                        self.driveOthersUsage = self.drive_usage_dict['Others Size']
+                    except:
+                        pass
+                except:
+                    pass
+
                 f.close()
             except:
                 raise ConfigLoadFailed()
@@ -172,8 +207,11 @@ class GoSyncModel(object):
         f = open(self.config_file, 'w')
         f.truncate()
         if not self.sync_selection:
-            sync_selection = [['root', '']]
-        json.dump({'Sync Selection' : self.sync_selection}, f)
+            self.config_dict['Sync Selection'] = [['root', '']]
+
+        self.account_dict[self.user_email] = self.config_dict
+
+        json.dump(self.account_dict, f)
         f.close()
 
     def DoAuthenticate(self):
@@ -743,8 +781,11 @@ class GoSyncModel(object):
             self.usageCalculateEvent.clear()
 
             self.sync_lock.acquire()
-            GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
-                                              None)
+            if self.drive_usage_dict and not self.updates_done:
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                self.sync_lock.release()
+                continue
+
             self.updates_done = 0
             self.calculatingDriveUsage = True
             self.driveAudioUsage = 0
@@ -758,21 +799,29 @@ class GoSyncModel(object):
                 self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
                                                   self.totalFilesToCheck)
+                try:
+                    self.calculateUsageOfFolder('root')
+                    GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                    self.drive_usage_dict['Total Files'] = self.totalFilesToCheck
+                    self.drive_usage_dict['Total Size'] = long(self.about_drive['quotaBytesTotal'])
+                    self.drive_usage_dict['Audio Size'] = self.driveAudioUsage
+                    self.drive_usage_dict['Movies Size'] = self.driveMoviesUsage
+                    self.drive_usage_dict['Document Size'] = self.driveDocumentUsage
+                    self.drive_usage_dict['Photo Size'] = self.drivePhotoUsage
+                    self.drive_usage_dict['Others Size'] = self.driveOthersUsage
+                    pickle.dump(self.driveTree, open(self.tree_pickle_file, "wb"))
+                    self.config_dict['Drive Usage'] = self.drive_usage_dict
+                    self.SaveConfig()
+                except:
+                    self.driveAudioUsage = 0
+                    self.driveMoviesUsage = 0
+                    self.driveDocumentUsage = 0
+                    self.drivePhotoUsage = 0
+                    self.driveOthersUsage = 0
+                    GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
             except:
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
                 self.logger.error("Failed to get the total number of files in drive\n")
-
-            try:
-                self.calculateUsageOfFolder('root')
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
-            except:
-                self.driveAudioUsage = 0
-                self.driveMoviesUsage = 0
-                self.driveDocumentUsage = 0
-                self.drivePhotoUsage = 0
-                self.driveOthersUsage = 0
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
-
 
             self.calculatingDriveUsage = False
             self.sync_lock.release()
@@ -818,6 +867,7 @@ class GoSyncModel(object):
                 if d[0] == 'root':
                     self.sync_selection = []
             self.sync_selection.append([folder.GetPath(), folder.GetId()])
+        self.config_dict['Sync Selection'] = self.sync_selection
         self.SaveConfig()
 
     def GetSyncList(self):
