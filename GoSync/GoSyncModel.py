@@ -80,6 +80,7 @@ class GoSyncModel(object):
         self.credential_file = self.config_path + "/.credentials.json"
         self.settings_file = self.config_path + "/settings.yaml"
         self.mirror_directory = expanduser("~") + "/gosync-drive"
+        self.fcount = 0
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
         self.sync_selection = []
         self.config_file = os.path.join(os.environ['HOME'], '.gosync', 'gosyncrc')
@@ -531,6 +532,7 @@ class GoSyncModel(object):
             for f in file_list:
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                     file_count += self.TotalFilesInFolder(f['id'])
+                    file_count += 1
                 else:
                     file_count += 1
 
@@ -705,6 +707,8 @@ class GoSyncModel(object):
         try:
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
             for f in file_list:
+                self.fcount += 1
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_UPDATE, self.fcount)
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                     self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
                     self.calculateUsageOfFolder(f['id'])
@@ -737,9 +741,12 @@ class GoSyncModel(object):
             self.driveDocumentUsage = 0
             self.drivePhotoUsage = 0
             self.driveOthersUsage = 0
+            self.fcount = 0
             try:
                 self.totalFilesToCheck = self.TotalFilesInDrive()
                 self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
+                                                  self.totalFilesToCheck)
             except:
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
                 self.logger.error("Failed to get the total number of files in drive\n")

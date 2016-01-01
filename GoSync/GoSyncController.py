@@ -35,6 +35,7 @@ class PageAccount(wx.Panel):
         wx.Panel.__init__(self, parent, size=parent.GetSize())
 
         self.sync_model = sync_model
+        self.totalFiles = 0
 
         aboutdrive = sync_model.DriveInfo()
         self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['quotaBytesTotal']), -1)
@@ -55,6 +56,8 @@ class PageAccount(wx.Panel):
                                           self.OnUsageCalculationStarted)
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
                                           self.OnUsageCalculationDone)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_UPDATE,
+                                          self.OnUsageCalculationUpdate)
 
     def OnUsageCalculationDone(self, event):
         if not event.data:
@@ -68,7 +71,12 @@ class PageAccount(wx.Panel):
         else:
             self.driveUsageBar.SetStatusMessage("Sorry, could not calculate your Google Drive usage.")
 
+    def OnUsageCalculationUpdate(self, event):
+        percent = (event.data * 100)/self.totalFiles
+        self.driveUsageBar.SetStatusMessage("Calculating your categorical usage... (%d%%)\n" % percent)
+
     def OnUsageCalculationStarted(self, event):
+        self.totalFiles = event.data
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
 
 class GoSyncController(wx.Frame):
