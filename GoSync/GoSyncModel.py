@@ -568,7 +568,7 @@ class GoSyncModel(object):
             self.updates_done = 1
             self.logger.info('Done\n')
 
-    def SyncRemoteDirectory(self, parent, pwd):
+    def SyncRemoteDirectory(self, parent, pwd, recursive=True):
         if not self.syncRunning.is_set():
             self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
             return
@@ -584,6 +584,9 @@ class GoSyncModel(object):
                     return
 
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
+                    if not recursive:
+                        continue
+
                     abs_dirpath = os.path.join(self.mirror_directory, pwd, f['title'])
                     self.logger.debug("Checking directory %s\n" % f['title'])
                     if not os.path.exists(abs_dirpath):
@@ -675,6 +678,8 @@ class GoSyncModel(object):
                 for d in self.sync_selection:
                     self.logger.info("Syncing remote (%s)... " % d[0])
                     if d[0] != 'root':
+                        #Root folder files are always synced
+                        self.SyncRemoteDirectory('root', '', False)
                         self.SyncRemoteDirectory(d[1], d[0])
                     else:
                         self.SyncRemoteDirectory('root', '')
