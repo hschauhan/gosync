@@ -49,6 +49,8 @@ class FileListQueryFailed(RuntimeError):
     """The query of file list failed"""
 class ConfigLoadFailed(RuntimeError):
     """Failed to load the GoSync configuration file"""
+class AuthenticationFailed(RuntimeError):
+    """Authentication failed with pydrive because of some issue"""
 
 audio_file_mimelist = ['audio/mpeg', 'audio/x-mpeg-3', 'audio/mpeg3', 'audio/aiff', 'audio/x-aiff']
 movie_file_mimelist = ['video/mp4', 'video/x-msvideo', 'video/mpeg', 'video/flv', 'video/quicktime']
@@ -121,7 +123,7 @@ class GoSyncModel(object):
         if not os.path.exists(self.settings_file) or \
                 not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
-            sfile.write("save_credentials: False")
+            sfile.write("save_credentials: True")
             sfile.write("\n")
             sfile.write("save_credentials_file: ")
             sfile.write(self.credential_file)
@@ -171,7 +173,7 @@ class GoSyncModel(object):
         self.usageCalculateEvent.set()
 
         if not os.path.exists(self.tree_pickle_file):
-           self.logger.info("No saved device tree. Creating a new tree to sync with server.")
+            self.logger.info("No saved device tree. Creating a new tree to sync with server.")
             self.driveTree = GoogleDriveTree()
         else:
             self.logger.info("Loading last tree from file.")
@@ -245,16 +247,31 @@ class GoSyncModel(object):
 
     def DoAuthenticate(self):
         try:
-            self.authToken = GoogleAuth(self.settings_file)
-            self.authToken.LocalWebserverAuth()
+            self.authToken = GoogleAuth(settings_file=self.settings_file)
+            if self.authToken.credentials is None:
+                self.logger.info("No credentials loaded from file. Doing authentication again.")
+                try:
+                    self.authToken.LocalWebserverAuth()
+                except AuthenticationRejected:
+                    print("Authentication rejected")
+                    raise
+                except AuthenticationError:
+                    print("Authentication error")
+                    raise
+                except:
+                    print("Unknown error")
+                    raise UknownError()
+                self.authToken.Authorize()
+            elif self.authToken.access_token_expired:
+                self.logger.info("Token is expired. Refreshing.")
+                self.authToken.Refresh()
+            else:
+                self.authToken.Authorize()
+
             self.drive = GoogleDrive(self.authToken)
             self.is_logged_in = True
         except:
-            dial = wx.MessageDialog(None, "Authentication Rejected!\n",
-                                    'Information', wx.ID_OK | wx.ICON_EXCLAMATION)
-            dial.ShowModal()
-            self.is_logged_in = False
-            pass
+            raise AuthenticationFailed()
 
     def DoUnAuthenticate(self):
             self.do_sync = False
