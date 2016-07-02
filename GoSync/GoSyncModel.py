@@ -79,26 +79,43 @@ class GoSyncModel(object):
         self.fcount = 0
         self.updates_done = 0
 
+        self.logger = logging.getLogger(APP_NAME)
+        self.logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
+        fh.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
+
+        self.logger.info("Starting up...")
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
+        self.logger.info("Config Path: %s" % self.config_path)
         self.credential_file = os.path.join(self.config_path, "credentials.json")
+        self.logger.info("Crediential File: %s" % self.credential_file)
         self.settings_file = os.path.join(self.config_path, "settings.yaml")
         self.base_mirror_directory = os.path.join(os.environ['HOME'], "Google Drive")
+        self.logger.info("Mirror Directory Base: %s" % self.base_mirror_directory)
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
+        self.logger.info("Secret File: %s" % self.client_secret_file)
         self.sync_selection = []
         self.config_file = os.path.join(os.environ['HOME'], '.gosync', 'gosyncrc')
+        self.logger.info("Confile file: %s" % self.config_file)
         self.config_dict = {}
         self.account_dict = {}
         self.drive_usage_dict = {}
         self.config=None
 
         if not os.path.exists(self.config_path):
+            self.logger.error("Config path doesn't exist. Creating one. Also return client secret not found error.")
             os.mkdir(self.config_path, 0755)
             raise ClientSecretsNotFound()
 
         if not os.path.exists(self.base_mirror_directory):
+            self.logger.info("Creating base mirror directory.")
             os.mkdir(self.base_mirror_directory, 0755)
 
         if not os.path.exists(self.client_secret_file):
+            self.logger.error("Client secrets not found.")
             raise ClientSecretsNotFound()
 
         if not os.path.exists(self.settings_file) or \
@@ -113,7 +130,9 @@ class GoSyncModel(object):
             sfile.write("save_credentials_backend: file\n")
             sfile.close()
 
+        self.logger.info("Creating observer.")
         self.observer = Observer()
+        self.logger.info("Going for authentication from user.")
         self.DoAuthenticate()
         self.about_drive = self.authToken.service.about().get().execute()
         self.user_email = self.about_drive['user']['emailAddress']
@@ -122,41 +141,48 @@ class GoSyncModel(object):
         if not os.path.exists(self.mirror_directory):
             os.mkdir(self.mirror_directory, 0755)
 
+        self.logger.info("Creating drive tree shadow copy...")
         self.tree_pickle_file = os.path.join(self.config_path, 'gtree-' + self.user_email + '.pick')
 
         if not os.path.exists(self.config_file):
+            self.logger.info("Creating default config file.")
             self.CreateDefaultConfigFile()
 
         try:
             self.LoadConfig()
         except:
+            self.logger.error("Configuration load failed.")
             raise
 
-
+        self.logger.info("Scheduling file modification notify handler.")
         self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self),
                                                      self.mirror_directory, recursive=True)
 
         self.sync_lock = threading.Lock()
         self.sync_thread = threading.Thread(target=self.run)
+        self.logger.info("Creating the usage calculation thread.")
         self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
         self.sync_thread.daemon = True
         self.usage_calc_thread.daemon = True
         self.syncRunning = threading.Event()
         self.syncRunning.clear()
         self.usageCalculateEvent = threading.Event()
+        self.logger.info("Starting the usage calculator thread.")
         self.usageCalculateEvent.set()
 
-        self.logger = logging.getLogger(APP_NAME)
-        self.logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
-        fh.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        self.logger.addHandler(fh)
         if not os.path.exists(self.tree_pickle_file):
+           self.logger.info("No saved device tree. Creating a new tree to sync with server.")
             self.driveTree = GoogleDriveTree()
         else:
-            self.driveTree = pickle.load(open(self.tree_pickle_file, "rb"))
+            self.logger.info("Loading last tree from file.")
+            try:
+                    self.driveTree = pickle.load(open(self.tree_pickle_file, "rb"))
+                    self.logger.info("done")
+            except:
+                    self.logger.error("Failed to load the drive tree from file. Resetting...")
+                    self.driveTree = GoogleDriveTree()
+
+            self.logger.info("All done.")
 
     def SetTheBallRolling(self):
         self.sync_thread.start()

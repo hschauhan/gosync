@@ -18,7 +18,7 @@
 
 import wx, os, time
 import sys, os, wx, ntpath, defines, threading, math, webbrowser
-from GoSyncModel import GoSyncModel, ClientSecretsNotFound
+from GoSyncModel import GoSyncModel, ClientSecretsNotFound, ConfigLoadFailed
 from defines import *
 from threading import Timer
 from DriveUsageBox import DriveUsageBox
@@ -94,6 +94,12 @@ class GoSyncController(wx.Frame):
                 webbrowser.open(CLIENT_SECRET_HELP_SITE, new=1, autoraise=True)
 
             sys.exit(1)
+	except ConfigLoadFailed:
+            dial = wx.MessageDialog(None, 'GoSync failed to load the configuration file.\n',
+                                    'Error', wx.OK | wx.ICON_EXCLAMATION)
+            res = dial.ShowModal()
+            sys.exit(1)
+
         except:
             dial = wx.MessageDialog(None, 'GoSync failed to initialize\n',
                                     'Error', wx.OK | wx.ICON_EXCLAMATION)
