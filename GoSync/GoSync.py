@@ -17,21 +17,17 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import sys, os, wx, GoSyncController, GoSyncModel
+import sys, os, GoSyncModel, platform
 from os.path import expanduser, dirname, relpath
-from GoSyncController import GoSyncController
+from GoSyncControllerGTK import GoSyncControllerGTK
 from defines import *
 
 # Add the current path to gosync path.
 sys.path.insert(0, APP_PATH)
 
 def main():
-    os.chdir(APP_PATH)
-    app = wx.PySimpleApp()
-    controller = GoSyncController()
-    controller.Center()
-    controller.Show()
-    app.MainLoop()
+	os.chdir(APP_PATH)
+	app = GoSyncControllerGTK()
 
 if __name__ == "__main__":
     main()

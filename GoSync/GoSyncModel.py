@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import sys, os, wx, ntpath, defines, threading, hashlib, time, copy
+import sys, os, ntpath, defines, threading, hashlib, time, copy
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 from os.path import expanduser
@@ -27,7 +27,6 @@ from apiclient.errors import HttpError
 from apiclient import errors
 import logging
 from defines import *
-from GoSyncEvents import *
 from GoSyncDriveTree import GoogleDriveTree
 import json, pickle
 
@@ -252,6 +251,7 @@ class GoSyncModel(object):
                 self.logger.info("No credentials loaded from file. Doing authentication again.")
                 try:
                     self.authToken.LocalWebserverAuth()
+                    self.authToken.Authorize()
                 except AuthenticationRejected:
                     print("Authentication rejected")
                     raise
@@ -261,7 +261,6 @@ class GoSyncModel(object):
                 except:
                     print("Unknown error")
                     raise UknownError()
-                self.authToken.Authorize()
             elif self.authToken.access_token_expired:
                 self.logger.info("Token is expired. Refreshing.")
                 self.authToken.Refresh()
@@ -644,8 +643,8 @@ class GoSyncModel(object):
         else:
             self.logger.info('Downloading %s ' % abs_filepath)
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
-            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
-                                              {'Downloading %s' % fd})
+            #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+            #                                  {'Downloading %s' % fd})
             dfile.GetContentFile(abs_filepath)
             self.updates_done = 1
             self.logger.info('Done\n')
@@ -750,13 +749,13 @@ class GoSyncModel(object):
             try:
                 self.validate_sync_settings()
             except:
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_INV_FOLDER, 0)
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_INV_FOLDER, 0)
                 self.syncRunning.clear()
                 self.sync_lock.release()
                 continue
 
             try:
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
                 for d in self.sync_selection:
                     self.logger.info("Syncing remote (%s)... " % d[0])
                     if d[0] != 'root':
@@ -771,17 +770,18 @@ class GoSyncModel(object):
                 self.logger.info("done\n")
                 if self.updates_done:
                     self.usageCalculateEvent.set()
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
             except:
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
+		print("SYNC DONE")
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
 
             self.sync_lock.release()
 
             time_left = 600
 
             while (time_left):
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
-                                                  {'Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))})
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
+                #                                  {'Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))})
                 time_left -= 1
                 self.syncRunning.wait()
                 time.sleep(1)
@@ -799,7 +799,7 @@ class GoSyncModel(object):
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
             for f in file_list:
                 self.fcount += 1
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_UPDATE, self.fcount)
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_UPDATE, self.fcount)
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                     self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
                     self.calculateUsageOfFolder(f['id'])
@@ -826,7 +826,7 @@ class GoSyncModel(object):
 
             self.sync_lock.acquire()
             if self.drive_usage_dict and not self.updates_done:
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
                 self.sync_lock.release()
                 continue
 
@@ -841,11 +841,11 @@ class GoSyncModel(object):
             try:
                 self.totalFilesToCheck = self.TotalFilesInDrive()
                 self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
-                                                  self.totalFilesToCheck)
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
+                #                                  self.totalFilesToCheck)
                 try:
                     self.calculateUsageOfFolder('root')
-                    GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                    #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
                     self.drive_usage_dict['Total Files'] = self.totalFilesToCheck
                     self.drive_usage_dict['Total Size'] = long(self.about_drive['quotaBytesTotal'])
                     self.drive_usage_dict['Audio Size'] = self.driveAudioUsage
@@ -862,9 +862,9 @@ class GoSyncModel(object):
                     self.driveDocumentUsage = 0
                     self.drivePhotoUsage = 0
                     self.driveOthersUsage = 0
-                    GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
+                    #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
             except:
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
+                #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
                 self.logger.error("Failed to get the total number of files in drive\n")
 
             self.calculatingDriveUsage = False
