@@ -49,6 +49,8 @@ INI_FILE = os.path.join(APP_PATH, "gosync.ini")
 
 RESOURCE_PATH = HERE + '/resources'
 TRAY_TOOLTIP = 'GoSync - A Google Drive Client for Linux'
+DESKTOP_ICON_NAME = 'GoSyncIcon.png'
+DESKTOP_ICON = HERE + '/resources/' + DESKTOP_ICON_NAME
 TRAY_ICON = HERE + '/resources/GoSyncIcon.png'
 APP_ICON = HERE + '/resources/GoSyncIcon-16.png'
 ABOUT_ICON = HERE + '/resources/GoSyncIcon-64.png'
