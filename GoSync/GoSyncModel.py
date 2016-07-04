@@ -28,7 +28,8 @@ from apiclient import errors
 import logging
 from defines import *
 from GoSyncDriveTree import GoogleDriveTree
-import json, pickle
+import json, pickle, datetime
+from gi.repository import GObject
 
 class ClientSecretsNotFound(RuntimeError):
     """Client secrets file was not found"""
@@ -67,8 +68,21 @@ google_docs_mimelist = ['application/vnd.google-apps.spreadsheet', \
                             'application/vnd.google-apps.document', \
                             'application/vnd.google-apps.map']
 
-class GoSyncModel(object):
+class GoSyncModel(GObject.GObject):
+    __gsignals__ = {
+        'sync_update' : (GObject.SIGNAL_RUN_FIRST, None, (str, str, str,)),
+	'sync_timer' : (GObject.SIGNAL_RUN_FIRST, None, (str,)),
+	'sync_started' : (GObject.SIGNAL_RUN_FIRST, None, (int,)),
+	'sync_done' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
+	'calculate_usage_started' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
+	'calculate_usage_done' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
+	'calculate_usage_update' : (GObject.SIGNAL_RUN_FIRST, None, (int, ))
+    }
+
     def __init__(self):
+
+	GObject.GObject.__init__(self)
+
         self.calculatingDriveUsage = False
         self.driveAudioUsage = 0
         self.driveMoviesUsage = 0
@@ -188,6 +202,9 @@ class GoSyncModel(object):
                     self.updates_done = 1
 
             self.logger.info("All done.")
+
+    def do_sync_udpate(self, arg):
+	print("class method for sync_update called with argument", arg)
 
     def SetTheBallRolling(self):
         self.sync_thread.start()
@@ -391,23 +408,28 @@ class GoSyncModel(object):
         except FolderNotFound:
             if basepath == '':
                 self.CreateDirectoryInParent(dirname)
+		now = datetime.datetime.now()
+                try:
+		    self.emit('sync_update', dirname, 'Upload', now.strftime("%Y-%m-%d %H:%M"))
+                except:
+                    print "CreateDirectoryByPath: sync_update signal failed."
             else:
                 try:
                     parent_folder = self.LocateFolderOnDrive(basepath)
                     self.CreateDirectoryInParent(dirname, parent_folder['id'])
+		    now = datetime.datetime.now()
+                    try:
+		        self.emit('sync_update', dirname, 'Upload', now.strftime("%Y-%m-%d %H:%M"))
+                    except:
+                        print "CreateDirectoryByPath: sync_update signal failed (basepath)"
+
                 except:
                     errorMsg = "Failed to locate directory path %s on drive.\n" % basepath
                     self.logger.error(errorMsg)
-                    dial = wx.MessageDialog(None, errorMsg, 'Directory Not Found',
-                                            wx.ID_OK | wx.ICON_EXCLAMATION)
-                    dial.ShowModal()
                     return
         except FileListQueryFailed:
             errorMsg = "Server Query Failed!\n"
             self.logger.error(errorMsg)
-            dial = wx.MessageDialog(None, errorMsg, 'Directory Not Found',
-                                    wx.ID_OK | wx.ICON_EXCLAMATION)
-            dial.ShowModal()
             return
 
     def CreateRegularFile(self, file_path, parent='root', uploaded=False):
@@ -417,6 +439,11 @@ class GoSyncModel(object):
                                        "parents": [{"kind": "drive#fileLink", "id": parent}]})
         upfile.SetContentFile(file_path)
         upfile.Upload()
+	now = datetime.datetime.now()
+        try:
+		self.emit('sync_update', file_path, 'Upload', now.strftime("%Y-%m-%d %H:%M"))
+        except:
+                print "CreateRegularFile: sync_update signal failed."
 
     def UploadFile(self, file_path):
         if os.path.isfile(file_path):
@@ -648,6 +675,13 @@ class GoSyncModel(object):
         else:
             self.logger.info('Downloading %s ' % abs_filepath)
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
+            now = datetime.datetime.now()
+            print now.strftime("%Y-%m-%d %H:%M")
+            try:
+		self.emit('sync_update', fd, 'Download', now.strftime("%Y-%m-%d %H:%M"))
+            except:
+                print "DownloadFileByObject: sync_udpate signal failed"
+
             #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
             #                                  {'Downloading %s' % fd})
             dfile.GetContentFile(abs_filepath)
@@ -763,7 +797,7 @@ class GoSyncModel(object):
                 continue
 
             try:
-                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
+		#self.emit('sync_started', 0)
                 for d in self.sync_selection:
                     self.logger.info("Syncing remote (%s)... " % d[0])
                     if d[0] != 'root':
@@ -778,20 +812,17 @@ class GoSyncModel(object):
                 self.logger.info("done\n")
                 if self.updates_done:
                     self.usageCalculateEvent.set()
-                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
+		#self.emit('sync_done', 0)
             except:
-                print("SYNC DONE")
-                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
+		print("SYNC DONE ERROR")
+		#self.emit('sync_done', -1)
 
             self.sync_lock.release()
 
             time_left = 600
 
             while (time_left):
-                #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
-                #                                  {'Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))})
-                self.logger.debug('Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60)))
-
+		#self.emit('sync_timer', ('Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))))
                 time_left -= 1
                 self.syncRunning.wait()
                 time.sleep(1)
@@ -809,7 +840,7 @@ class GoSyncModel(object):
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
             for f in file_list:
                 self.fcount += 1
-                #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_UPDATE, self.fcount)
+		self.emit('calculate_usage_update', self.fcount)
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                     self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
                     self.calculateUsageOfFolder(f['id'])
@@ -836,7 +867,7 @@ class GoSyncModel(object):
 
             self.sync_lock.acquire()
             if self.drive_usage_dict and not self.updates_done:
-                #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+		self.emit('calculate_usage_done', 0)
                 self.sync_lock.release()
                 continue
 
@@ -851,11 +882,10 @@ class GoSyncModel(object):
             try:
                 #self.totalFilesToCheck = self.TotalFilesInDrive()
                 #self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
-                #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
-                #                                  self.totalFilesToCheck)
+		#self.emit('calculate_usage_started', 0)
                 try:
                     self.calculateUsageOfFolder('root')
-                    #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+		    self.emit('calculate_usage_done', 0)
                     self.drive_usage_dict['Total Files'] = self.totalFilesToCheck
                     self.drive_usage_dict['Total Size'] = long(self.about_drive['quotaBytesTotal'])
                     self.drive_usage_dict['Audio Size'] = self.driveAudioUsage
@@ -872,9 +902,9 @@ class GoSyncModel(object):
                     self.driveDocumentUsage = 0
                     self.drivePhotoUsage = 0
                     self.driveOthersUsage = 0
-                    #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
+		    self.emit('calculate_usage_done', -1)
             except:
-                #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
+		self.emit('calculate_usage_done', -1)
                 self.logger.error("Failed to get the total number of files in drive\n")
 
             self.calculatingDriveUsage = False
@@ -926,6 +956,19 @@ class GoSyncModel(object):
             self.sync_selection.append([folder.GetPath(), folder.GetId()])
         self.config_dict['Sync Selection'] = self.sync_selection
         self.SaveConfig()
+
+    def RemoveSyncSelection(self, folder):
+	i = 0
+	deleted = False
+	for d in self.sync_selection:
+	        if d[0] == folder.GetPath() and d[1] == folder.GetId():
+			del self.sync_selection[i]
+			deleted = True
+		i = i + 1
+
+	if deleted:
+		self.config_dict['Sync Selection'] = self.sync_selection
+		self.SaveConfig()
 
     def GetSyncList(self):
         return copy.deepcopy(self.sync_selection)

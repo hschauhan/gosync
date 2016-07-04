@@ -34,21 +34,22 @@ def menuitem_close_response(w, buf):
 class GoSyncSettingsWindowGTK(Gtk.Window):
 	def __init__(self, sync_model=None):
 		self.sync_model = sync_model
+
 		Gtk.Window.__init__(self, title=APP_NAME)
 
+		self.set_default_size(400, 700)
 		self.set_border_width(10)
 		self.sync_all = True
 
 		vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 		self.add(vbox)
 
-		stack = Gtk.Stack()
-		stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
-		stack.set_transition_duration(1000)
-
 		self.tree_store = Gtk.TreeStore(str, bool, object)
 		self.tree_view = Gtk.TreeView(self.tree_store)
 		self.tree_view.set_rules_hint(True)
+		self.tree_scroll = Gtk.ScrolledWindow()
+		self.tree_scroll.set_vexpand(True)
+		self.tree_scroll.add(self.tree_view)
 
 		self.renderer = Gtk.CellRendererText()
 		self.renderer.set_property('editable', False)
@@ -57,17 +58,15 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 		self.renderer1.set_property('activatable', True)
 		self.renderer1.connect('toggled', self.select_toggled_cb, self.tree_store)
 
-		self.column0 = Gtk.TreeViewColumn("Folders", self.renderer, text=0)
-		self.column1 = Gtk.TreeViewColumn("Sync", self.renderer1)
-		self.column1.add_attribute(self.renderer1, "active", 1)
+		self.column0 = Gtk.TreeViewColumn("Sync", self.renderer1)
+		self.column0.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
+		self.column0.add_attribute(self.renderer1, "active", 1)
+		self.column0.set_fixed_width(70)
+		self.column1 = Gtk.TreeViewColumn("Folders", self.renderer, text=0)
+		self.column1.set_sizing(Gtk.TreeViewColumnSizing.AUTOSIZE)
 
 		self.tree_view.append_column(self.column0)
 		self.tree_view.append_column(self.column1)
-
-		driveTree = self.sync_model.GetDriveDirectoryTree()
-		self.MakeDriveTree(driveTree.GetRoot(), None)
-
-		vbox_so = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
 		self.account_status = Gtk.Entry()
 		self.account_status.set_editable(False)
@@ -89,21 +88,51 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 		button = Gtk.Button.new_with_label("Disconnect From Drive")
 		button.connect("clicked", self.menuitem_logout)
 
-		stack.add_titled(vbox_so, "sync_options", "Sync Options and Account")
-		stack_switcher = Gtk.StackSwitcher()
-		stack_switcher.set_stack(stack)
+		vbox.pack_start(label, False, False, 0)
+		vbox.pack_start(self.account_status, False, False, 0)
+		vbox.pack_start(self.tree_scroll, True, True, 0)
 
-		vbox_so.pack_start(label, True, True, 0)
-		vbox_so.pack_start(self.account_status, True, True, 0)
-		vbox_so.pack_start(self.tree_view, True, True, 0)
-		vbox_so.pack_start(self.sync_all_check, True, True, 0)
-		vbox.pack_start(stack_switcher, True, True, 0)
-		vbox.pack_start(stack, True, True, 0)
-		vbox.pack_end(button, True, True, 0)
+		hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+		hbox.pack_start(self.sync_all_check, False, False, 0)
+		self.slabel = Gtk.Label("")
+		self.spinner = Gtk.Spinner()
 
-		self.SyncEntries()
+		self.DriveTreeReady = 0
+		if not self.sync_model.IsCalculatingDriveUsage():	
+			driveTree = self.sync_model.GetDriveDirectoryTree()
+			self.MakeDriveTree(driveTree.GetRoot(), None)
+			self.DriveTreeReady = 1
+
+		if self.sync_model.IsCalculatingDriveUsage():
+			self.slabel.set_text("    Reading drive. Please wait...")
+			self.spinner.start()
+
+		hbox.pack_start(self.slabel, False, False, 0)
+		hbox.pack_end(self.spinner, False, False, 0)
+
+		vbox.pack_start(hbox, False, False, 0)
+		vbox.pack_end(button, False, False, 0)
+
+		if self.DriveTreeReady:
+			self.SyncEntries()
+
+		self.sync_model.connect('calculate_usage_done', self.UsageCalculationDone)
 
 		self.show_all()
+
+	def RefreshTree(self):
+		driveTree = self.sync_model.GetDriveDirectoryTree()
+		self.MakeDriveTree(driveTree.GetRoot(), None)
+		self.DriveTreeReady = 1
+
+	def UsageCalculationDone(self, obj, ret_val):
+		self.spinner.stop()
+		self.slabel.set_text("")
+		if ret_val == 0:
+			self.RefreshTree()
+			self.SyncEntries()
+		else:
+			print("Something went wrong in calulation of drive space.")
 
 	def MakeDriveTree(self, gparent, tparent):
 		file_list = gparent.GetChildren()
@@ -148,7 +177,10 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 		if not self.sync_all:
 			model[path][1] = not model[path][1]
 			f = model[path][2]
-			self.sync_model.SetSyncSelection(f)
+			if model[path][1]:
+				self.sync_model.SetSyncSelection(f)
+			else:
+				self.sync_model.RemoveSyncSelection(f)
 			print "Toggle '%s' to: %s Full Path: %s" % (model[path][0], model[path][1], model[path][2].GetPath())
 		return
 
@@ -169,6 +201,9 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 	def menuitem_logout(self, w):
 		self.sync_model.DoUnAuthenticate()
 		Gtk.main_quit()
+
+	def OnWindowClose(self, w, e):
+		self.sync_model.disconnect('calculate_usage_done')
 
 
 class GoSyncControllerGTK(object):
@@ -205,11 +240,13 @@ class GoSyncControllerGTK(object):
 
 		except:
 			mformat="Arghh! This shouldn't have happened. Please send ~/GoSync.log to help debug further."
-			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialgFlags.MODAL, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK, message_format=mformat)
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK, message_format=mformat)
 			mdialog.connect("response", self.dialog_response)
 			mdialog.show()
 			Gtk.main()
 			return
+
+		self.sync_model.connect('calculate_usage_update', self.OnCalculateUsageUpdate)
 
 		self.sync_model.SetTheBallRolling()
 
@@ -230,6 +267,9 @@ class GoSyncControllerGTK(object):
 			self.tray.connect('popup-menu', self.OnRightClick)
 
 		Gtk.main()
+
+	def OnCalculateUsageUpdate(self, obj, value):
+		print("Calculate update: %d\n" % int(value))
 
 	def dialog_response(self, widget, response_id):
 		widget.destroy()
@@ -308,14 +348,9 @@ class GoSyncControllerGTK(object):
 			self.sync_model.StartSync()
 
 	def menuitem_settings_response(self, w, buf):
-		if self.sync_model.IsCalculatingDriveUsage():
-			mformat="Your Google Drive(TM) usage is being calculated and device tree being created.\n\nThis may take some time depending on how large your usage is. Please try again after sometime.\n\nThanks."
-			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK, message_format=mformat)
-			mdialog.connect("response", self.calculation_dialog_response)
-			mdialog.show()
-		else:
-			self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
-			self.settings_window.show_all()
+		print("Show WINDOW")
+		self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
+		self.settings_window.show_all()
 
 	def FileSizeHumanize(self, size):
 		size = abs(size)
