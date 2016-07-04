@@ -81,7 +81,7 @@ class GoSyncModel(object):
         self.updates_done = 0
 
         self.logger = logging.getLogger(APP_NAME)
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
         fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
         fh.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -174,6 +174,8 @@ class GoSyncModel(object):
         if not os.path.exists(self.tree_pickle_file):
             self.logger.info("No saved device tree. Creating a new tree to sync with server.")
             self.driveTree = GoogleDriveTree()
+            self.drive_usage_dict = {}
+            self.updates_done = 1
         else:
             self.logger.info("Loading last tree from file.")
             try:
@@ -182,6 +184,8 @@ class GoSyncModel(object):
             except:
                     self.logger.error("Failed to load the drive tree from file. Resetting...")
                     self.driveTree = GoogleDriveTree()
+                    self.drive_usage_dict = {}
+                    self.updates_done = 1
 
             self.logger.info("All done.")
 
@@ -212,7 +216,6 @@ class GoSyncModel(object):
                 try:
                     self.config_dict = self.config[self.user_email]
                     self.sync_selection = self.config_dict['Sync Selection']
-                    print self.config_dict['Drive Usage']
                     try:
                         self.drive_usage_dict = self.config_dict['Drive Usage']
                         self.totalFilesToCheck = self.drive_usage_dict['Total Files']
@@ -254,13 +257,15 @@ class GoSyncModel(object):
                     self.authToken.Authorize()
                 except AuthenticationRejected:
                     print("Authentication rejected")
-                    raise
+                    raise AuthenticationFailed()
+
                 except AuthenticationError:
                     print("Authentication error")
-                    raise
+                    raise AuthenticationFailed()
                 except:
-                    print("Unknown error")
-                    raise UknownError()
+                    print("Unknown error in doing authentication.")
+                    raise AuthenticationFailed()
+
             elif self.authToken.access_token_expired:
                 self.logger.info("Token is expired. Refreshing.")
                 self.authToken.Refresh()
@@ -744,12 +749,15 @@ class GoSyncModel(object):
         while True:
             self.syncRunning.wait()
 
+            self.logger.debug("Sync thread unblocked")
             self.sync_lock.acquire()
+            self.logger.debug("Sync lock is acquired")
 
             try:
                 self.validate_sync_settings()
             except:
                 #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_INV_FOLDER, 0)
+                self.logger.error("Sync settings are not valid")
                 self.syncRunning.clear()
                 self.sync_lock.release()
                 continue
@@ -772,7 +780,7 @@ class GoSyncModel(object):
                     self.usageCalculateEvent.set()
                 #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
             except:
-		print("SYNC DONE")
+                print("SYNC DONE")
                 #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
 
             self.sync_lock.release()
@@ -782,6 +790,8 @@ class GoSyncModel(object):
             while (time_left):
                 #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
                 #                                  {'Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))})
+                self.logger.debug('Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60)))
+
                 time_left -= 1
                 self.syncRunning.wait()
                 time.sleep(1)
@@ -839,8 +849,8 @@ class GoSyncModel(object):
             self.driveOthersUsage = 0
             self.fcount = 0
             try:
-                self.totalFilesToCheck = self.TotalFilesInDrive()
-                self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
+                #self.totalFilesToCheck = self.TotalFilesInDrive()
+                #self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
                 #GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
                 #                                  self.totalFilesToCheck)
                 try:

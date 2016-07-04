@@ -18,7 +18,7 @@
 
 import os, time, sys, ntpath, threading, math, webbrowser, platform
 from gi.repository import Gtk, GdkPixbuf
-from GoSyncModel import GoSyncModel, ClientSecretsNotFound, ConfigLoadFailed
+from GoSyncModel import GoSyncModel, ClientSecretsNotFound, ConfigLoadFailed, AuthenticationFailed
 from defines import *
 from threading import Timer
 
@@ -73,7 +73,12 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 		self.account_status.set_editable(False)
 		self.aboutdrive = self.sync_model.DriveInfo()
 		self.account_status.set_text(("%s of %s used") % (self.FileSizeHumanize(long(self.aboutdrive['quotaBytesUsed'])), self.FileSizeHumanize(long(self.aboutdrive['quotaBytesTotal']))))
-		self.account_status.set_progress_fraction(long(self.aboutdrive['quotaBytesUsed'])/long(self.aboutdrive['quotaBytesTotal']))
+		used_bytes = float(self.aboutdrive['quotaBytesUsed'])
+		quota_bytes = float(self.aboutdrive['quotaBytesTotal'])
+		min_bytes = 0
+		max_bytes = quota_bytes
+		fraction_used = (used_bytes - min_bytes)/(max_bytes - min_bytes)
+		self.account_status.set_progress_fraction(fraction_used)
 		self.set_title(self.aboutdrive['name'])
 
 		self.sync_all_check = Gtk.CheckButton("Sync Everything")
@@ -110,7 +115,7 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 		sync_list = self.sync_model.GetSyncList()
 		rootiter = self.tree_store.get_iter_first()
 		for sync_entry in sync_list:
-			if sync_entry[0] == "root":
+			if sync_entry[0] is None or sync_entry[0] == "root":
 				self.sync_all_check.set_active(True)
 				self.sync_all = True
 			else:
@@ -171,13 +176,39 @@ class GoSyncControllerGTK(object):
 		try:
 			self.sync_model = GoSyncModel()
 		except ClientSecretsNotFound:
-			print("Client secrets not found")
+			mformat="Could not find client_secrets.json in .gosync directory in your home folder.\n Please create one and copy it there."
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL,
+							type=Gtk.MessageType.WARNING,
+							buttons=Gtk.ButtonsType.OK,
+							message_format=mformat)
+			mdialog.connect("response", self.dialog_response)
+			mdialog.show()
+			Gtk.main()
 			return
 		except ConfigLoadFailed:
+			mformat="Could not load and parse gosyncrc from .gosync folder of your home directory\n\nPlease contact Himanshu Chauhan <hschauhan@nulltrace.org> for debugging.\nSorry for the inconvinience."
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING,
+							buttons=Gtk.ButtonsType.OK, message_format=mformat)
+			mdialog.connect("response", self.dialog_response)
+			mdialog.show()
+			Gtk.main()
 			print("Config load failed")
 			return
+
+		except AuthenticationFailed:
+			mformat="Request to access your Google Drive(TM) was rejected. Please check your internet connection and your Google account username/password."
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK, message_format=mformat)
+			mdialog.connect("response", self.dialog_response)
+			mdialog.show()
+			Gtk.main()
+			return
+
 		except:
-			print("GoSync model failed to initialize")
+			mformat="Arghh! This shouldn't have happened. Please send ~/GoSync.log to help debug further."
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialgFlags.MODAL, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK, message_format=mformat)
+			mdialog.connect("response", self.dialog_response)
+			mdialog.show()
+			Gtk.main()
 			return
 
 		self.sync_model.SetTheBallRolling()
@@ -187,7 +218,7 @@ class GoSyncControllerGTK(object):
 		self.menu = None
 
 		if platform.dist()[0] == 'Ubuntu':
-			ind = appindicator.Indicator.new(APP_ID, "whatever", appindicator.IndicatorCategory.APPLICATION_STATUS)
+			ind = appindicator.Indicator.new(APP_ID, "GoSync", appindicator.IndicatorCategory.APPLICATION_STATUS)
 			ind.set_status(appindicator.IndicatorStatus.ACTIVE)
 			ind.set_icon_theme_path(RESOURCE_PATH)
 			ind.set_icon("GoSyncIcon-32")
@@ -199,6 +230,13 @@ class GoSyncControllerGTK(object):
 			self.tray.connect('popup-menu', self.OnRightClick)
 
 		Gtk.main()
+
+	def dialog_response(self, widget, response_id):
+		widget.destroy()
+		Gtk.main_quit()
+
+	def calculation_dialog_response(self, widget, response_id):
+		widget.destroy()
 
 	def CreateMenu(self):
 		self.menu = Gtk.Menu()
@@ -263,15 +301,21 @@ class GoSyncControllerGTK(object):
 		if item.get_label() == "Pause":
 			print("Stop the sync")
 			item.set_label("Start")
-			self.sync_model.StartSync()
+			self.sync_model.StopSync()
 		else:
 			print("Start the sync")
 			item.set_label("Pause")
-			self.sync_model.StopSync()
+			self.sync_model.StartSync()
 
 	def menuitem_settings_response(self, w, buf):
-		self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
-		self.settings_window.show_all()
+		if self.sync_model.IsCalculatingDriveUsage():
+			mformat="Your Google Drive(TM) usage is being calculated and device tree being created.\n\nThis may take some time depending on how large your usage is. Please try again after sometime.\n\nThanks."
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK, message_format=mformat)
+			mdialog.connect("response", self.calculation_dialog_response)
+			mdialog.show()
+		else:
+			self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
+			self.settings_window.show_all()
 
 	def FileSizeHumanize(self, size):
 		size = abs(size)
