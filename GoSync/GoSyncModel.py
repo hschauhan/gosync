@@ -31,26 +31,56 @@ from GoSyncDriveTree import GoogleDriveTree
 import json, pickle, datetime
 from gi.repository import GObject
 
-class ClientSecretsNotFound(RuntimeError):
-    """Client secrets file was not found"""
-class FileNotFound(RuntimeError):
-    """File was not found on google drive"""
-class FolderNotFound(RuntimeError):
-    """Folder on Google Drive was not found"""
-class UnknownError(RuntimeError):
-    """Unknown/Unexpected error happened"""
-class MD5ChecksumCalculationFailed(RuntimeError):
-    """Calculation of MD5 checksum on a given file failed"""
-class RegularFileUploadFailed(RuntimeError):
-    """Upload of a regular file failed"""
-class RegularFileTrashFailed(RuntimeError):
-    """Could not move file to trash"""
-class FileListQueryFailed(RuntimeError):
-    """The query of file list failed"""
-class ConfigLoadFailed(RuntimeError):
-    """Failed to load the GoSync configuration file"""
-class AuthenticationFailed(RuntimeError):
-    """Authentication failed with pydrive because of some issue"""
+class ClientSecretsNotFound(Exception):
+	"""Client secrets file was not found"""
+	def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
+class FileNotFound(Exception):
+	"""File was not found on google drive"""
+	def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
+class FolderNotFound(Exception):
+	"""Folder on Google Drive was not found"""
+        def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
+class UnknownError(Exception):
+	"""Unknown/Unexpected error happened"""
+        def __init__(self):
+		Exception.__init__(self, "An unknown/unexpected error has happened. Please restart.")
+
+class MD5ChecksumCalculationFailed(Exception):
+	"""Calculation of MD5 checksum on a given file failed"""
+        def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
+class RegularFileUploadFailed(Exception):
+	"""Upload of a regular file failed"""
+        def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
+class RegularFileTrashFailed(Exception):
+	"""Could not move file to trash"""
+        def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
+class FileListQueryFailed(Exception):
+	"""The query of file list failed"""
+        def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
+class ConfigLoadFailed(Exception):
+	"""Failed to load the GoSync configuration file"""
+        def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
+class AuthenticationFailed(Exception):
+	"""Authentication failed with pydrive because of some issue"""
+        def __init__(self, msg=None):
+		Exception.__init__(self, msg)
+
 
 audio_file_mimelist = ['audio/mpeg', 'audio/x-mpeg-3', 'audio/mpeg3', 'audio/aiff', 'audio/x-aiff']
 movie_file_mimelist = ['video/mp4', 'video/x-msvideo', 'video/mpeg', 'video/flv', 'video/quicktime']
@@ -123,7 +153,7 @@ class GoSyncModel(GObject.GObject):
         if not os.path.exists(self.config_path):
             self.logger.error("Config path doesn't exist. Creating one. Also return client secret not found error.")
             os.mkdir(self.config_path, 0755)
-            raise ClientSecretsNotFound()
+            raise ClientSecretsNotFound("Running GoSync for the first time?\n\nGoSync was unable to find client_secrets.json file in .gosync folder in your home directory.")
 
         if not os.path.exists(self.base_mirror_directory):
             self.logger.info("Creating base mirror directory.")
@@ -131,7 +161,7 @@ class GoSyncModel(GObject.GObject):
 
         if not os.path.exists(self.client_secret_file):
             self.logger.error("Client secrets not found.")
-            raise ClientSecretsNotFound()
+            raise ClientSecretsNotFound("GoSync was unable to find client_secrets.json file in .gosync folder in your home directory.")
 
         if not os.path.exists(self.settings_file) or \
                 not os.path.isfile(self.settings_file):
@@ -249,9 +279,9 @@ class GoSyncModel(GObject.GObject):
 
                 f.close()
             except:
-                raise ConfigLoadFailed()
+                raise ConfigLoadFailed("Failed to load configuration file (%s)" % self.config_file)
         except:
-            raise ConfigLoadFailed()
+            raise ConfigLoadFailed("Failed to open/read configuration file (%s)" % self.config_file)
 
     def SaveConfig(self):
         f = open(self.config_file, 'w')
@@ -274,7 +304,7 @@ class GoSyncModel(GObject.GObject):
                     self.authToken.Authorize()
                 except AuthenticationRejected:
                     print("Authentication rejected")
-                    raise AuthenticationFailed()
+                    raise AuthenticationFailed("Authentication was rejected for your Google(&#8482) account.")
 
                 except AuthenticationError:
                     print("Authentication error")
@@ -334,7 +364,7 @@ class GoSyncModel(GObject.GObject):
             try:
                 folder = self.GetFolderOnDrive(dir1, croot)
                 if not folder:
-                    raise FolderNotFound()
+                    raise FolderNotFound("Folder %s wasn't found on drive" % dir1)
             except:
                 raise
 
@@ -370,8 +400,8 @@ class GoSyncModel(GObject.GObject):
                 except FileListQueryFailed:
                     self.logger.debug("LocateFileOnDrive: File list query failed\n")
                     raise
-            except FolderNotFound:
-                self.logger.debug("LocateFileOnDrive: Folder not found\n")
+            except FolderNotFound as e:
+                self.logger.debug(e)
                 raise
             except FileListQueryFailed:
                 self.logger.debug("LocateFileOnDrive:  %s folder not found\n" % dirpath)
@@ -478,7 +508,7 @@ class GoSyncModel(GObject.GObject):
                     # must have come first.
                     # So,
                     # Folder not found? That cannot happen. Can it?
-                    raise RegularFileUploadFailed()
+                    raise RegularFileUploadFailed("Failed upload file possibly because parent folder (%s) was not found on drive" % dirpath)
         else:
             self.CreateDirectoryByPath(file_path)
 
@@ -592,8 +622,8 @@ class GoSyncModel(GObject.GObject):
                 except:
                     self.logger.error("?????\n")
                     return
-            except FolderNotFound:
-                self.logger.error("MoveObservedFile: Couldn't locate destination folder on drive.\n")
+            except FolderNotFound as e:
+                self.logger.error(e + " MoveObservedFile: Couldn't locate destination folder on drive.\n")
                 return
             except:
                 self.logger.error("MoveObservedFile: Unknown error while locating destination folder on drive.\n")
@@ -604,8 +634,8 @@ class GoSyncModel(GObject.GObject):
 	except FileListQueryFailed:
 	    self.logger.error("MoveObservedFile: File Query failed. aborting.\n")
 	    return
-	except FolderNotFound:
-	    self.logger.error("MoveObservedFile: Folder not found\n")
+	except FolderNotFound as e:
+	    self.logger.error(e + " MoveObservedFile: Folder not found\n")
 	    return
 	except:
 	    self.logger.error("MoveObservedFile: Unknown error while moving file.\n")
@@ -769,15 +799,16 @@ class GoSyncModel(GObject.GObject):
                 try:
                     f = self.LocateFolderOnDrive(d[0])
                     if f['id'] != d[1]:
-                        raise FolderNotFound()
+                        raise FolderNotFound("Can't locate folder %s on drive" % d[0])
                     break
-                except FolderNotFound:
+                except FolderNotFound as e:
+                    self.logger.error(e)
                     raise
                 except:
-                    raise FolderNotFound()
+                    raise FolderNotFound("Can't locate folder %s on drive" % d[0])
             else:
                 if d[1] != '':
-                    raise FolderNotFound()
+                    raise FolderNotFound("Folder to sync is root but ID is defined as %s" % d[1])
 
     def run(self):
         while True:

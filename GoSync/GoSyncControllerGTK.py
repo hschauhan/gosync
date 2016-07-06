@@ -210,29 +210,27 @@ class GoSyncControllerGTK(object):
 	def __init__(self):
 		try:
 			self.sync_model = GoSyncModel()
-		except ClientSecretsNotFound:
-			mformat="Could not find client_secrets.json in .gosync directory in your home folder.\n Please create one and copy it there."
+		except ClientSecretsNotFound as e:
 			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL,
 							type=Gtk.MessageType.WARNING,
 							buttons=Gtk.ButtonsType.OK,
-							message_format=mformat)
+							message_format=e)
 			mdialog.connect("response", self.dialog_response)
 			mdialog.show()
 			Gtk.main()
 			return
-		except ConfigLoadFailed:
-			mformat="Could not load and parse gosyncrc from .gosync folder of your home directory\n\nPlease contact Himanshu Chauhan <hschauhan@nulltrace.org> for debugging.\nSorry for the inconvinience."
+		except ConfigLoadFailed as e:
 			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING,
-							buttons=Gtk.ButtonsType.OK, message_format=mformat)
+							buttons=Gtk.ButtonsType.OK, message_format=e)
 			mdialog.connect("response", self.dialog_response)
 			mdialog.show()
 			Gtk.main()
 			print("Config load failed")
 			return
 
-		except AuthenticationFailed:
-			mformat="Request to access your Google Drive(TM) was rejected. Please check your internet connection and your Google account username/password."
-			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK, message_format=mformat)
+		except AuthenticationFailed as e:
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING,
+							buttons=Gtk.ButtonsType.OK, message_format=e)
 			mdialog.connect("response", self.dialog_response)
 			mdialog.show()
 			Gtk.main()
@@ -240,13 +238,12 @@ class GoSyncControllerGTK(object):
 
 		except:
 			mformat="Arghh! This shouldn't have happened. Please send ~/GoSync.log to help debug further."
-			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.OK, message_format=mformat)
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING,
+							buttons=Gtk.ButtonsType.OK, message_format=mformat)
 			mdialog.connect("response", self.dialog_response)
 			mdialog.show()
 			Gtk.main()
 			return
-
-		self.sync_model.connect('calculate_usage_update', self.OnCalculateUsageUpdate)
 
 		self.sync_model.SetTheBallRolling()
 
@@ -267,9 +264,6 @@ class GoSyncControllerGTK(object):
 			self.tray.connect('popup-menu', self.OnRightClick)
 
 		Gtk.main()
-
-	def OnCalculateUsageUpdate(self, obj, value):
-		print("Calculate update: %d\n" % int(value))
 
 	def dialog_response(self, widget, response_id):
 		widget.destroy()
@@ -348,7 +342,6 @@ class GoSyncControllerGTK(object):
 			self.sync_model.StartSync()
 
 	def menuitem_settings_response(self, w, buf):
-		print("Show WINDOW")
 		self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
 		self.settings_window.show_all()
 
