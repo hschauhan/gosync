@@ -16,6 +16,9 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+import gi
+gi.require_version('Gtk', '3.0')
+
 import os, time, sys, ntpath, threading, math, webbrowser, platform
 from gi.repository import Gtk, GdkPixbuf
 from GoSyncModel import GoSyncModel, ClientSecretsNotFound, ConfigLoadFailed, AuthenticationFailed
@@ -23,10 +26,8 @@ from defines import *
 from threading import Timer
 
 if platform.dist()[0] == 'Ubuntu':
-        from gi.repository import AppIndicator3 as appindicator
-
-import gi
-gi.require_version('Gtk', '3.0')
+	gi.require_version('AppIndicator3', '0.1')
+	from gi.repository import AppIndicator3 as appindicator
 
 def menuitem_close_response(w, buf):
 	Gtk.main_quit()
