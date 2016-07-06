@@ -304,7 +304,7 @@ class GoSyncModel(GObject.GObject):
                     self.authToken.Authorize()
                 except AuthenticationRejected:
                     print("Authentication rejected")
-                    raise AuthenticationFailed("Authentication was rejected for your Google(&#8482) account.")
+                    raise AuthenticationFailed("Authentication was rejected for your Google account.")
 
                 except AuthenticationError:
                     print("Authentication error")
@@ -338,13 +338,13 @@ class GoSyncModel(GObject.GObject):
         head, tail = ntpath.split(path)
         return tail or ntpath.basename(head)
 
-    def GetFolderOnDrive(self, folder_name, parent='root'):
+    def GetFolderOnDrive(self, folder_name, include_trash, parent='root'):
         """
         Return the folder with name in "folder_name" in the parent folder
         mentioned in parent.
         """
-        self.logger.debug("GetFolderOnDrive: searching %s on %s... " % (folder_name, parent))
-        file_list = self.drive.ListFile({'q': "'%s' in parents and trashed=false" % parent}).GetList()
+        self.logger.debug("GetFolderOnDrive: searching %s on %s (trashed)... " % (folder_name, parent))
+        file_list = self.drive.ListFile({'q': "'%s' in parents and trashed=%s" % (parent, include_trash)}).GetList()
         for f in file_list:
             if f['title'] == folder_name and f['mimeType']=='application/vnd.google-apps.folder':
                 self.logger.debug("Found!\n")
@@ -352,7 +352,7 @@ class GoSyncModel(GObject.GObject):
 
         return None
 
-    def LocateFolderOnDrive(self, folder_path):
+    def LocateFolderOnDrive(self, folder_path, include_trash=False):
         """
         Locate and return the directory in the path. The complete path
         is walked and the last directory is returned. An exception is raised
@@ -362,7 +362,7 @@ class GoSyncModel(GObject.GObject):
         croot = 'root'
         for dir1 in dir_list:
             try:
-                folder = self.GetFolderOnDrive(dir1, croot)
+                folder = self.GetFolderOnDrive(dir1, include_trash, croot)
                 if not folder:
                     raise FolderNotFound("Folder %s wasn't found on drive" % dir1)
             except:
@@ -372,9 +372,10 @@ class GoSyncModel(GObject.GObject):
 
         return folder
 
-    def LocateFileInFolder(self, filename, parent='root'):
+    def LocateFileInFolder(self, filename, include_trash, parent='root'):
+        self.logger.debug("LocateFileInFolder: IncludeTrash: %s Parent: %s" % (include_trash, parent))
         try:
-            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
+            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=%s" % (parent, include_trash)})
             for f in file_list:
                 if f['title'] == filename:
                     return f
@@ -384,15 +385,16 @@ class GoSyncModel(GObject.GObject):
             raise FileNotFound()
 
 
-    def LocateFileOnDrive(self, abs_filepath):
+    def LocateFileOnDrive(self, abs_filepath, include_trash=False):
+        self.logger.debug("LocateFileOnDrive: File: %s Include Trash :%s" % (abs_filepath, include_trash))
         dirpath = os.path.dirname(abs_filepath)
         filename = self.PathLeaf(abs_filepath)
 
         if dirpath != '':
             try:
-                f = self.LocateFolderOnDrive(dirpath)
+                f = self.LocateFolderOnDrive(dirpath, include_trash)
                 try:
-                    fil = self.LocateFileInFolder(filename, f['id'])
+                    fil = self.LocateFileInFolder(filename, include_trash, f['id'])
                     return fil
                 except FileNotFound:
                     self.logger.debug("LocateFileOnDrive: File not found.\n")
@@ -408,7 +410,7 @@ class GoSyncModel(GObject.GObject):
                 raise
         else:
             try:
-                fil = self.LocateFileInFolder(filename)
+                fil = self.LocateFileInFolder(filename, include_trash)
                 return fil
             except FileNotFound:
                 self.logger.debug("LocateFileOnDrive: File not found.\n")
@@ -759,6 +761,10 @@ class GoSyncModel(GObject.GObject):
             raise
 
     def SyncLocalDirectory(self):
+	#
+	# Upload cycle
+	#
+	self.logger.info("Starting the Upload cycle...")
         for root, dirs, files in os.walk(self.mirror_directory):
             for names in files:
                 try:
@@ -771,10 +777,18 @@ class GoSyncModel(GObject.GObject):
                     # Log the event though
                     self.logger.info("File check on remote directory has failed. Aborting local sync.\n")
                     return
-                except:
-                    if os.path.exists(dirpath) and os.path.isfile(dirpath):
-                        self.logger.info("%s has been removed from drive. Deleting local copy\n" % dirpath)
-                        os.remove(dirpath)
+                except(FileNotFound, FolderNotFound):
+                    try:
+                        self.logger.info("Searching for file in Trash...")
+                        f = self.LocateFileOnDrive(drivepath, include_trash=True)
+                        if f and os.path.exists(dirpath) and os.path.isfile(dirpath):
+                            continue
+                    except(FileNotFound, FolderNotFound):
+                        self.logger.info("Local Sync Upload: %s" % dirpath)
+                        try:
+                            self.UploadFile(dirpath)
+                        except RegularFileUploadFailed as e:
+                            self.logger.error(e)
 
             for names in dirs:
                 try:
@@ -787,11 +801,74 @@ class GoSyncModel(GObject.GObject):
                     # Log the event though
                     self.logger.info("Folder check on remote directory has failed. Aborting local sync.\n")
                     return
-                except:
-                    if os.path.exists(dirpath) and os.path.isdir(dirpath):
-                        self.logger.info("%s folder has been removed from drive. Deleting local copy\n" % dirpath)
-                        os.remove(dirpath)
+                except (FileNotFound, FolderNotFound):
+                    try:
+                        self.logger.info("Searching for directory in Trash...")
+                        f = self.LocateFileOnDrive(drivepath, include_trash=True)
+                        if f and os.path.exists(dirpath) and os.path.isdir(dirpath):
+                            continue
+                    except (FileNotFound, FolderNotFound):
+                        self.logger.info("Local Sync UploadDir: %s" % dirpath)
+                        self.UploadFile(dirpath)
 
+	#####
+	# There is a better way of doing this but I am too lazy right now :)
+	#
+	# Delete cycle
+	#####
+        self.logger.info("Starting local delete cycle...")
+        for root, dirs, files in os.walk(self.mirror_directory, topdown=False):
+            for names in files:
+                try:
+                    dirpath = os.path.join(root, names)
+                    drivepath = dirpath.split(self.mirror_directory+'/')[1]
+                    f = self.LocateFileOnDrive(drivepath)
+                    continue
+                except FileListQueryFailed:
+                    # if the file list query failed, we can't delete the local file even if
+                    # its gone in remote drive. Let the next sync come and take care of this
+                    # Log the event though
+                    self.logger.info("File check on remote directory has failed. Aborting local sync.\n")
+                    return
+                except (FileNotFound, FolderNotFound):
+                    try:
+                        self.logger.info("Searching for file in Trash...")
+                        f = self.LocateFileOnDrive(drivepath, include_trash=True)
+                        if f and os.path.exists(dirpath) and os.path.isfile(dirpath):
+                            self.logger.info("%s has been removed from drive. Deleting local copy\n" % dirpath)
+                            try:
+                                os.remove(dirpath)
+                            except:
+                                self.logger.error("Failed to delete local copy")
+                    except:
+                        self.logger.error("Bummer! File not found in trash in delete cycle. What was Upload cycle doing?")
+
+            for names in dirs:
+                try:
+                    dirpath = os.path.join(root, names)
+                    drivepath = dirpath.split(self.mirror_directory+'/')[1]
+                    f = self.LocateFileOnDrive(drivepath)
+                    continue
+                except FileListQueryFailed:
+                    # if the file list query failed, we can't delete the local file even if
+                    # its gone in remote drive. Let the next sync come and take care of this
+                    # Log the event though
+                    self.logger.info("Folder check on remote directory has failed. Aborting local sync.\n")
+                    return
+                except:
+                    try:
+                        self.logger.info("Searching for directory in Trash...")
+                        f = self.LocateFileOnDrive(drivepath, include_trash=True)
+                        if f and os.path.exists(dirpath) and os.path.isdir(dirpath):
+                            self.logger.info("%s folder has been removed from drive. Deleting local copy\n" % dirpath)
+                            try:
+                                os.rmdir(dirpath)
+                            except:
+                                self.logger.error("Failed to delete the local copy of %s" % dirpath)
+                    except:
+                        self.logger.error("Ew! Folder not found in trash in delete cycle!")
+
+        self.logger.info("Delete cycle done")
 
     def validate_sync_settings(self):
         for d in self.sync_selection:
@@ -820,15 +897,15 @@ class GoSyncModel(GObject.GObject):
 
             try:
                 self.validate_sync_settings()
-            except:
+            except FolderNotFound as e:
                 #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_INV_FOLDER, 0)
-                self.logger.error("Sync settings are not valid")
+                self.logger.error(e + " Sync settings are not valid")
                 self.syncRunning.clear()
                 self.sync_lock.release()
                 continue
 
             try:
-		#self.emit('sync_started', 0)
+                #self.emit('sync_started', 0)
                 for d in self.sync_selection:
                     self.logger.info("Syncing remote (%s)... " % d[0])
                     if d[0] != 'root':
@@ -843,17 +920,17 @@ class GoSyncModel(GObject.GObject):
                 self.logger.info("done\n")
                 if self.updates_done:
                     self.usageCalculateEvent.set()
-		#self.emit('sync_done', 0)
+                #self.emit('sync_done', 0)
             except:
-		print("SYNC DONE ERROR")
-		#self.emit('sync_done', -1)
+                print("SYNC DONE ERROR")
+                #self.emit('sync_done', -1)
 
             self.sync_lock.release()
 
             time_left = 600
 
             while (time_left):
-		#self.emit('sync_timer', ('Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))))
+                #self.emit('sync_timer', ('Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))))
                 time_left -= 1
                 self.syncRunning.wait()
                 time.sleep(1)
@@ -871,7 +948,7 @@ class GoSyncModel(GObject.GObject):
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
             for f in file_list:
                 self.fcount += 1
-		self.emit('calculate_usage_update', self.fcount)
+                self.emit('calculate_usage_update', self.fcount)
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                     self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
                     self.calculateUsageOfFolder(f['id'])
