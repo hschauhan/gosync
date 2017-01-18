@@ -44,7 +44,7 @@ There is one more essential thing. The "client_secrets.json" file. I am not dist
 my "client_secrets.json" because I am not distributing GoSync commercially.
 
 A very good get started page can be found at (https://developers.google.com/drive/web/quickstart/python)
-and a step-by-step process at (https://github.com/jay0lee/GAM/wiki/Creating-client_secrets.json-and-oauth2service.json).
+and a step-by-step process at (https://github.com/jay0lee/GAM/wiki/CreatingClientSecretsFile).
 
 When you are done creating the client_secrets.json file, download it and keep it inside
 .gosync directory in your home directory.
