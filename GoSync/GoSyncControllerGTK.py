@@ -19,7 +19,7 @@
 import gi
 gi.require_version('Gtk', '3.0')
 
-import os, time, sys, ntpath, threading, math, webbrowser, platform
+import os, time, sys, ntpath, threading, math, webbrowser, platform, datetime
 from gi.repository import Gtk, GdkPixbuf
 from GoSyncModel import GoSyncModel, ClientSecretsNotFound, ConfigLoadFailed, AuthenticationFailed
 from defines import *
@@ -31,6 +31,30 @@ if platform.dist()[0] == 'Ubuntu':
 
 def menuitem_close_response(w, buf):
 	Gtk.main_quit()
+
+class GoSyncActivityLogWindowGTK(Gtk.Window):
+        def __init__(self):
+                Gtk.Window.__init__(self, title=APP_NAME + " Log Window")
+
+                self.set_default_size(900,900)
+                self.grid = Gtk.Grid()
+                self.add(self.grid)
+                self.create_log_view()
+
+        def create_log_view(self):
+                scrolled_window = Gtk.ScrolledWindow()
+                scrolled_window.set_hexpand(True)
+                scrolled_window.set_vexpand(True)
+                self.grid.attach(scrolled_window, 0, 1,3,1)
+                self.text_view = Gtk.TextView()
+                self.text_buffer = self.text_view.get_buffer()
+                scrolled_window.add(self.text_view)
+
+        def SetLogBuffer(self, log_buffer):
+                self.text_view.set_buffer(log_buffer)
+
+	def OnWindowClose(self, w, e):
+		self.destroy()
 
 class GoSyncSettingsWindowGTK(Gtk.Window):
 	def __init__(self, sync_model=None):
@@ -118,7 +142,6 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 			self.SyncEntries()
 
 		self.sync_model.connect('calculate_usage_done', self.UsageCalculationDone)
-
 		self.show_all()
 
 	def RefreshTree(self):
@@ -209,8 +232,11 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 
 class GoSyncControllerGTK(object):
 	def __init__(self):
+                self.activity_log_buffer = Gtk.TextBuffer()
+
 		try:
 			self.sync_model = GoSyncModel()
+                        self.sync_model.connect('log_update', self.SyncLogUpdate)
 		except ClientSecretsNotFound as e:
 			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL,
 							type=Gtk.MessageType.WARNING,
@@ -266,6 +292,9 @@ class GoSyncControllerGTK(object):
 
 		Gtk.main()
 
+        def SyncLogUpdate(self, obj, log_message):
+                self.activity_log_buffer.insert(self.activity_log_buffer.get_end_iter(), log_message)
+
 	def dialog_response(self, widget, response_id):
 		widget.destroy()
 		Gtk.main_quit()
@@ -298,6 +327,13 @@ class GoSyncControllerGTK(object):
 		self.menu.append(menu_item)
 
 		menu_item = Gtk.SeparatorMenuItem()
+		self.menu.append(menu_item)
+
+                activity = Gtk.MenuItem("Activity Log")
+                activity.connect("activate", self.menuitem_activity_log_response, "Activity")
+                self.menu.append(activity)
+
+                menu_item = Gtk.SeparatorMenuItem()
 		self.menu.append(menu_item)
 
 		about = Gtk.MenuItem()
@@ -342,9 +378,23 @@ class GoSyncControllerGTK(object):
 			item.set_label("Pause")
 			self.sync_model.StartSync()
 
+        def settings_warning_dialog_response(self, widget, response_id):
+		widget.destroy()
+
 	def menuitem_settings_response(self, w, buf):
-		self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
-		self.settings_window.show_all()
+                if self.sync_model.syncRunning.is_set():
+			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING,
+							buttons=Gtk.ButtonsType.OK, message_format="Sync is running right now. Cannot show settings window. Please try after sometime")
+			mdialog.connect("response", self.settings_warning_dialog_response)
+			mdialog.show()
+                else:
+		        self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
+		        self.settings_window.show_all()
+
+        def menuitem_activity_log_response(self, w, buf):
+                self.activity_log_window = GoSyncActivityLogWindowGTK()
+                self.activity_log_window.SetLogBuffer(self.activity_log_buffer)
+                self.activity_log_window.show_all()
 
 	def FileSizeHumanize(self, size):
 		size = abs(size)

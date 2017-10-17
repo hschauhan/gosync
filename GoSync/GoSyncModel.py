@@ -98,6 +98,7 @@ google_docs_mimelist = ['application/vnd.google-apps.spreadsheet', \
                             'application/vnd.google-apps.document', \
                             'application/vnd.google-apps.map']
 
+
 class GoSyncModel(GObject.GObject):
     __gsignals__ = {
         'sync_update' : (GObject.SIGNAL_RUN_FIRST, None, (str, str, str,)),
@@ -106,7 +107,8 @@ class GoSyncModel(GObject.GObject):
 	'sync_done' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
 	'calculate_usage_started' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
 	'calculate_usage_done' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
-	'calculate_usage_update' : (GObject.SIGNAL_RUN_FIRST, None, (int, ))
+	'calculate_usage_update' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
+	'log_update' : (GObject.SIGNAL_RUN_FIRST, None, (str,))
     }
 
     def __init__(self):
@@ -430,6 +432,7 @@ class GoSyncModel(GObject.GObject):
 
     def CreateDirectoryByPath(self, dirpath):
         self.logger.debug("create directory: %s\n" % dirpath)
+        self.SendLogUpdate( "Create directory: %s\n" % dirpath)
         drivepath = dirpath.split(self.mirror_directory+'/')[1]
         basepath = os.path.dirname(drivepath)
         dirname = self.PathLeaf(dirpath)
@@ -552,25 +555,30 @@ class GoSyncModel(GObject.GObject):
         try:
             self.authToken.service.files().trash(fileId=file_object['id']).execute()
             self.logger.info({"TRASH_FILE: File %s deleted successfully.\n" % file_object['title']})
+            self.SendLogUpdate("TRASH_FILE: File %s deleted successfully.\n" % file_object['title'])
         except errors.HttpError, error:
             self.logger.error("TRASH_FILE: HTTP Error\n")
+            self.SendLogUpdate("TRASH_FILE: HTTP Error\n")
             raise RegularFileTrashFailed()
 
     def TrashObservedFile(self, file_path):
         self.sync_lock.acquire()
         drive_path = file_path.split(self.mirror_directory+'/')[1]
         self.logger.debug({"TRASH_FILE: dirpath to delete: %s\n" % drive_path})
+        self.SendLogUpdate("TRASH_FILE: dirpath to delete: %s\n" % drive_path, 'debug')
         try:
             ftd = self.LocateFileOnDrive(drive_path)
             try:
                 self.TrashFile(ftd)
             except RegularFileTrashFailed:
                 self.logger.error({"TRASH_FILE: Failed to move file %s to trash\n" % drive_path})
+                self.SendLogUpdate( "TRASH_FILE: Failed to move file %s to trash.\n" % drive_path)
                 raise
             except:
                 raise
         except (FileNotFound, FileListQueryFailed, FolderNotFound):
             self.logger.error({"TRASH_FILE: Failed to locate %s file on drive\n" % drive_path})
+            self.SendLogUpdate( "TRASH_FILE: Failed to locate %s file on drive\n" % drive_path)
             pass
 
         self.sync_lock.release()
@@ -599,7 +607,7 @@ class GoSyncModel(GObject.GObject):
 	to_drive_path = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
 
         self.logger.debug("Moving file %s to %s\n" % (from_drive_path, to_drive_path))
-
+        self.SendLogUpdate("Moving file %s to %s\n" % (from_drive_path, to_drive_path))
 	try:
 	    ftm = self.LocateFileOnDrive(from_drive_path)
             self.logger.debug("MoveObservedFile: Found source file on drive\n")
@@ -620,27 +628,34 @@ class GoSyncModel(GObject.GObject):
                     self.logger.debug("done\n")
                 except (Unkownerror, FileMoveFailed):
                     self.logger.error("MovedObservedFile: Failed\n")
+                    self.SendLogUpdate("MovedObservedFile: Failed\n")
                     return
                 except:
                     self.logger.error("?????\n")
                     return
             except FolderNotFound as e:
                 self.logger.error(e + " MoveObservedFile: Couldn't locate destination folder on drive.\n")
+                self.SendLogUpdate("MoveObservedFile: Couldn't locate destination folder on drive.\n", 'Error')
                 return
             except:
                 self.logger.error("MoveObservedFile: Unknown error while locating destination folder on drive.\n")
+                self.SendLogUpdate("MoveObservedFile: Unknown error while locating destination folder on drive.\n", 'Error')
                 return
 	except FileNotFound:
             self.logger.error("MoveObservedFile: Couldn't locate file on drive.\n")
+            self.SendLogUpdate("MoveObservedFile: Couldn't locate file on drive.\n", 'Error')
             return
 	except FileListQueryFailed:
 	    self.logger.error("MoveObservedFile: File Query failed. aborting.\n")
+            self.SendLogUpdate("MoveObservedFile: File Query failed. aborting.\n", 'Error')
 	    return
 	except FolderNotFound as e:
 	    self.logger.error(e + " MoveObservedFile: Folder not found\n")
+            self.SendLogUpdate("MoveObservedFile: Folder not found\n", 'Error')
 	    return
 	except:
 	    self.logger.error("MoveObservedFile: Unknown error while moving file.\n")
+            self.SendLogUpdate("MoveObservedFile: Unknown error while moving file.\n", 'Error')
 	    return
 
     def HandleMovedFile(self, src_path, dest_path):
@@ -649,6 +664,7 @@ class GoSyncModel(GObject.GObject):
 
 	if drive_path1 == drive_path2:
             self.logger.debug("Rename file\n")
+            self.SendLogUpdate("Rename file from %s to %s\n" % (src_path, self.PathLeaf(dest_path)))
 	    self.RenameObservedFile(src_path, self.PathLeaf(dest_path))
 	else:
             self.logger.debug("Move file\n")
@@ -666,9 +682,11 @@ class GoSyncModel(GObject.GObject):
                     time.sleep((2**n) + random.random())
             except:
                 self.logger.error("MakeFileListQuery: failed with reason %s\n" % error.resp.reason)
+                self.SendLogUpdate("MakeFileListQuery: failed with reason %s\n" % error.resp.reason, 'Error')
                 time.sleep((2**n) + random.random())
 
         self.logger.error("Can't get the connection back after many retries. Bailing out\n")
+        self.SendLogUpdate("Can't get the connection back after many retries. Bailing out\n")
         raise FileListQueryFailed
 
     def TotalFilesInFolder(self, parent='root'):
@@ -705,20 +723,23 @@ class GoSyncModel(GObject.GObject):
             else:
                 self.logger.debug("DownloadFileByObject: Local and remote file with same name but different content. Skipping. (local file: %s)\n" % abs_filepath)
         else:
-            self.logger.info('Downloading %s ' % abs_filepath)
+            self.logger.info('Downloading %s... ' % abs_filepath)
+            self.SendLogUpdate( 'Downloading %s ' % abs_filepath)
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
             now = datetime.datetime.now()
-            print now.strftime("%Y-%m-%d %H:%M")
             try:
 		self.emit('sync_update', fd, 'Download', now.strftime("%Y-%m-%d %H:%M"))
             except:
                 print "DownloadFileByObject: sync_udpate signal failed"
+                self.SendLogUpdate( "[Failed]\n")
 
             #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
             #                                  {'Downloading %s' % fd})
             dfile.GetContentFile(abs_filepath)
             self.updates_done = 1
             self.logger.info('Done\n')
+            self.SendLogUpdate( '[Success]\n')
+
 
     def SyncRemoteDirectory(self, parent, pwd, recursive=True):
         if not self.syncRunning.is_set():
@@ -756,8 +777,10 @@ class GoSyncModel(GObject.GObject):
                         self.DownloadFileByObject(f, os.path.join(self.mirror_directory, pwd))
                     else:
                         self.logger.info("%s is a google document\n" % f['title'])
+                        self.emit("%s is a google document\n" % f['title'])
         except:
             self.logger.error("Failed to sync directory\n")
+            self.emit("Failed to sync directory\n")
             raise
 
     def SyncLocalDirectory(self):
@@ -765,6 +788,7 @@ class GoSyncModel(GObject.GObject):
 	# Upload cycle
 	#
 	self.logger.info("Starting the Upload cycle...")
+        self.SendLogUpdate( "Starting the Upload cycle...")
         for root, dirs, files in os.walk(self.mirror_directory):
             for names in files:
                 try:
@@ -776,6 +800,7 @@ class GoSyncModel(GObject.GObject):
                     # its gone in remote drive. Let the next sync come and take care of this
                     # Log the event though
                     self.logger.info("File check on remote directory has failed. Aborting local sync.\n")
+                    self.emit("File check on remote directory has failed. Aborting local sync.\n")
                     return
                 except(FileNotFound, FolderNotFound):
                     try:
@@ -785,6 +810,7 @@ class GoSyncModel(GObject.GObject):
                             continue
                     except(FileNotFound, FolderNotFound):
                         self.logger.info("Local Sync Upload: %s" % dirpath)
+                        self.SendLogUpdate( "Local Sync Upload: %s" % dirpath)
                         try:
                             self.UploadFile(dirpath)
                         except RegularFileUploadFailed as e:
@@ -800,15 +826,19 @@ class GoSyncModel(GObject.GObject):
                     # its gone in remote drive. Let the next sync come and take care of this
                     # Log the event though
                     self.logger.info("Folder check on remote directory has failed. Aborting local sync.\n")
+                    self.SendLogUpdate( "Folder check on remote directory has failed. Aborting local sync.\n")
+
                     return
                 except (FileNotFound, FolderNotFound):
                     try:
                         self.logger.info("Searching for directory in Trash...")
+                        self.SendLogUpdate( "Searching for directory in Trash...")
                         f = self.LocateFileOnDrive(drivepath, include_trash=True)
                         if f and os.path.exists(dirpath) and os.path.isdir(dirpath):
                             continue
                     except (FileNotFound, FolderNotFound):
                         self.logger.info("Local Sync UploadDir: %s" % dirpath)
+                        self.SendLogUpdate( "Local Sync UploadDir: %s\n" % dirpath)
                         self.UploadFile(dirpath)
 
 	#####
@@ -817,6 +847,7 @@ class GoSyncModel(GObject.GObject):
 	# Delete cycle
 	#####
         self.logger.info("Starting local delete cycle...")
+        self.SendLogUpdate( "Starting local delete cycle...\n")
         for root, dirs, files in os.walk(self.mirror_directory, topdown=False):
             for names in files:
                 try:
@@ -829,19 +860,24 @@ class GoSyncModel(GObject.GObject):
                     # its gone in remote drive. Let the next sync come and take care of this
                     # Log the event though
                     self.logger.info("File check on remote directory has failed. Aborting local sync.\n")
+                    self.SendLogUpdate( "File check on remote directory has failed. Aborting local sync.\n")
                     return
                 except (FileNotFound, FolderNotFound):
-                    try:
-                        self.logger.info("Searching for file in Trash...")
-                        f = self.LocateFileOnDrive(drivepath, include_trash=True)
-                        if f and os.path.exists(dirpath) and os.path.isfile(dirpath):
-                            self.logger.info("%s has been removed from drive. Deleting local copy\n" % dirpath)
-                            try:
-                                os.remove(dirpath)
-                            except:
-                                self.logger.error("Failed to delete local copy")
-                    except:
-                        self.logger.error("Bummer! File not found in trash in delete cycle. What was Upload cycle doing?")
+                        self.logger.info("Searching for file (%s) in Trash..." % dirpath )
+                        self.SendLogUpdate("Search for file (%s) in Trash...\n" % dirpath )
+                        try:
+                                f = self.LocateFileOnDrive(drivepath, include_trash=True)
+                                if f and os.path.exists(dirpath) and os.path.isfile(dirpath):
+                                        self.logger.info("%s has been removed from drive. Deleting local copy\n" % dirpath)
+                                        self.SendLogUpdate( "%s has been removed from drive. Deleting local copy\n" % dirpath)
+                                        try:
+                                                os.remove(dirpath)
+                                        except:
+                                                self.logger.error("Failed to delete local copy")
+                                                self.SendLogUpdate( "Failed to delete local copy\n")
+                        except:
+                                self.logger.error("Bummer! File not found in trash in delete cycle. What was Upload cycle doing?")
+                                self.SendLogUpdate( "Bummer! File not found in trash in delete cycle. Possible upload candidate will be taken care in upload cycle.")
 
             for names in dirs:
                 try:
@@ -854,21 +890,28 @@ class GoSyncModel(GObject.GObject):
                     # its gone in remote drive. Let the next sync come and take care of this
                     # Log the event though
                     self.logger.info("Folder check on remote directory has failed. Aborting local sync.\n")
+                    self.SendLogUpdate( "Folder check on remote directory has failed. Aborting local sync.\n")
                     return
                 except:
                     try:
                         self.logger.info("Searching for directory in Trash...")
+                        self.SendLogUpdate( "Searching for directory in Trash...\n")
                         f = self.LocateFileOnDrive(drivepath, include_trash=True)
                         if f and os.path.exists(dirpath) and os.path.isdir(dirpath):
                             self.logger.info("%s folder has been removed from drive. Deleting local copy\n" % dirpath)
+                            self.SendLogUpdate( "%s folder has been removed from drive. Deleting local copy\n" % dirpath)
                             try:
                                 os.rmdir(dirpath)
                             except:
                                 self.logger.error("Failed to delete the local copy of %s" % dirpath)
+                                self.SendLogUpdate( "Failed to delete the local copy of %s\n" % dirpath)
                     except:
                         self.logger.error("Ew! Folder not found in trash in delete cycle!")
+                        self.SendLogUpdate( "Ew! Folder not found in trash in delete cycle!")
+
 
         self.logger.info("Delete cycle done")
+        self.SendLogUpdate( "Delete cycle done")
 
     def validate_sync_settings(self):
         for d in self.sync_selection:
@@ -908,6 +951,7 @@ class GoSyncModel(GObject.GObject):
                 #self.emit('sync_started', 0)
                 for d in self.sync_selection:
                     self.logger.info("Syncing remote (%s)... " % d[0])
+                    self.SendLogUpdate( "Syncing remote (%s)... "% d[0])
                     if d[0] != 'root':
                         #Root folder files are always synced
                         self.SyncRemoteDirectory('root', '', False)
@@ -915,14 +959,18 @@ class GoSyncModel(GObject.GObject):
                     else:
                         self.SyncRemoteDirectory('root', '')
                     self.logger.info("done\n")
+                    self.SendLogUpdate( "Done\n")
                 self.logger.info("Syncing local...")
+                self.SendLogUpdate( "Syncing local...")
                 self.SyncLocalDirectory()
                 self.logger.info("done\n")
+                self.SendLogUpdate( "Done\n")
                 if self.updates_done:
                     self.usageCalculateEvent.set()
                 #self.emit('sync_done', 0)
             except:
                 print("SYNC DONE ERROR")
+                self.SendLogUpdate( "SYNC DONE ERROR")
                 #self.emit('sync_done', -1)
 
             self.sync_lock.release()
@@ -1081,6 +1129,11 @@ class GoSyncModel(GObject.GObject):
     def GetSyncList(self):
         return copy.deepcopy(self.sync_selection)
 
+    def SendLogUpdate(self, log_message, log_type='info'):
+        time_string = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        message =  time_string + ' - GoSync - ' + '- ' + log_type + ' - ' + log_message + '\n'
+        self.emit('log_update', message)
+
 class FileModificationNotifyHandler(PatternMatchingEventHandler):
     patterns = ["*"]
 
@@ -1089,13 +1142,16 @@ class FileModificationNotifyHandler(PatternMatchingEventHandler):
         self.sync_handler = sync_handler
 
     def on_created(self, evt):
-        self.sync_handler.logger.debug("Observer: %s created\n" % evt.src_path)
+        self.sync_handler.logger.info("Observer: %s created\n" % evt.src_path)
+        self.sync_handler.SendLogUpdate("Observer: %s created\n" % evt.src_path)
         self.sync_handler.UploadObservedFile(evt.src_path)
 
     def on_moved(self, evt):
         self.sync_handler.logger.info("Observer: file %s moved to %s: Not supported yet!\n" % (evt.src_path, evt.dest_path))
+        self.sync_handler.SendLogUpdate("Observer: file %s moved to %s\n" % (evt.src_path, evt.dest_path))
         self.sync_handler.HandleMovedFile(evt.src_path, evt.dest_path)
 
     def on_deleted(self, evt):
         self.sync_handler.logger.info("Observer: file %s deleted on drive.\n" % evt.src_path)
+        self.sync_handler.SendLogUpdate("Observer: file %s deleted on drive\n" % evt.src_path)
         self.sync_handler.TrashObservedFile(evt.src_path)
