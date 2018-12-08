@@ -108,6 +108,7 @@ class GoSyncModel(GObject.GObject):
                 'calculate_usage_started' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
                 'calculate_usage_done' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
                 'calculate_usage_update' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
+                'drive_tree_creation_done' : (GObject.SIGNAL_RUN_FIRST, None, (int, )),
                 'log_update' : (GObject.SIGNAL_RUN_FIRST, None, (str,))
         }
 
@@ -124,6 +125,7 @@ class GoSyncModel(GObject.GObject):
                 self.savedTotalSize = 0
                 self.fcount = 0
                 self.updates_done = 0
+                self.drive_tree_created = 0
 
                 self.logger = logging.getLogger(APP_NAME)
                 self.logger.setLevel(logging.INFO)
@@ -200,35 +202,44 @@ class GoSyncModel(GObject.GObject):
                         self.logger.error("Configuration load failed.")
                         raise
 
-                self.logger.info("Scheduling file modification notify handler.")
-                self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self),
-                                                             self.mirror_directory, recursive=True)
-
                 self.sync_lock = threading.Lock()
                 self.sync_thread = threading.Thread(target=self.run)
                 self.logger.info("Creating the usage calculation thread.")
+
+                self.drive_tree_creator_thread = threading.Thread(target=self.CreateDriveDirectoryTree)
+                self.drive_tree_creator_thread.daemon = True
+                self.drive_tree_creator_event = threading.Event()
+                self.drive_tree_creator_event.clear()
+ 
                 self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
                 self.sync_thread.daemon = True
                 self.usage_calc_thread.daemon = True
                 self.syncRunning = threading.Event()
                 self.syncRunning.clear()
                 self.usageCalculateEvent = threading.Event()
-                self.logger.info("Starting the usage calculator thread.")
-                self.usageCalculateEvent.set()
+                #self.logger.info("Starting the usage calculator thread.")
+                #self.usageCalculateEvent.set()
+
+                self.logger.info("Scheduling file modification notify handler.")
+                self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self),
+                                                             self.mirror_directory, recursive=True)
 
                 if not os.path.exists(self.tree_pickle_file):
                         self.logger.info("No saved device tree. Creating a new tree to sync with server.")
                         self.driveTree = GoogleDriveTree()
                         self.drive_usage_dict = {}
                         self.updates_done = 1
+                        self.drive_tree_creator_event.set()
                 else:
                         self.logger.info("Loading last tree from file.")
                         try:
                                 self.driveTree = pickle.load(open(self.tree_pickle_file, "rb"))
+                                self.drive_tree_created = 1
                                 self.logger.info("done")
                         except:
                                 self.logger.error("Failed to load the drive tree from file. Resetting...")
                                 self.driveTree = GoogleDriveTree()
+                                self.drive_tree_creator_event.set()
                                 self.drive_usage_dict = {}
                                 self.updates_done = 1
 
@@ -240,6 +251,7 @@ class GoSyncModel(GObject.GObject):
         def SetTheBallRolling(self):
                 self.sync_thread.start()
                 self.usage_calc_thread.start()
+                self.drive_tree_creator_thread.start()
                 self.observer.start()
 
         def IsUserLoggedIn(self):
@@ -570,6 +582,7 @@ class GoSyncModel(GObject.GObject):
                 except (FileNotFound, FileListQueryFailed, FolderNotFound):
                         self.logger.error({"TRASH_FILE: Failed to locate %s file on drive\n" % drive_path})
                         self.SendLogUpdate( "TRASH_FILE: Failed to locate %s file on drive\n" % drive_path)
+                        self.sync_lock.release()
                         pass
 
                 self.sync_lock.release()
@@ -732,8 +745,11 @@ class GoSyncModel(GObject.GObject):
 
 
         def SyncRemoteDirectory(self, parent, pwd, recursive=True):
+                self.logger.info("Syncing folder %s" % parent)
+                self.SendLogUpdate("Syncing folder %s\n" % parent)
                 if not self.syncRunning.is_set():
                         self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
+                        self.SendLogUpdate("SyncRemoteDirectory: Sync has been paused. Aobrting.\n")
                         return
 
                 if not os.path.exists(os.path.join(self.mirror_directory, pwd)):
@@ -743,34 +759,43 @@ class GoSyncModel(GObject.GObject):
                         file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
                         for f in file_list:
                                 if not self.syncRunning.is_set():
-                                        self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
+                                        self.logger.info("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
+                                        self.SendLogUpdate("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
                                         return
 
                                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                                         if not recursive:
+                                                self.logger.info("Found a folder but sync is not recursive. Continuing...")
+                                                self.SendLogUpdate("Found a folder but sync is not recursive. Continuing...\n")
                                                 continue
 
                                         abs_dirpath = os.path.join(self.mirror_directory, pwd, f['title'])
-                                        self.logger.debug("Checking directory %s\n" % f['title'])
+                                        self.logger.info("Checking directory %s\n" % f['title'])
+                                        self.SendLogUpdate("Checking directory %s\n" % f['title'])
                                         if not os.path.exists(abs_dirpath):
-                                                self.logger.debug("creating directory %s " % abs_dirpath)
+                                                self.logger.info("creating directory %s " % abs_dirpath)
+                                                self.SendLogUpdate("creating directory %s\n" % abs_dirpath)
                                                 os.makedirs(abs_dirpath)
-                                                self.logger.debug("done\n")
-                                        self.logger.debug('syncing directory %s\n' % f['title'])
+                                                self.logger.info("done\n")
+                                        self.logger.info('syncing directory %s\n' % f['title'])
+                                        self.SendLogUpdate('syncing directory %s\n' % f['title'])
                                         self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['title']))
                                         if not self.syncRunning.is_set():
                                                 self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
+                                                self.SendLogUpdate("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
                                                 return
                                 else:
                                         self.logger.debug("Checking file %s\n" % f['title'])
+                                        self.SendLogUpdate("Checking file %s\n" % f['title'])
                                         if not self.IsGoogleDocument(f):
                                                 self.DownloadFileByObject(f, os.path.join(self.mirror_directory, pwd))
                                         else:
                                                 self.logger.info("%s is a google document\n" % f['title'])
-                                                self.emit("%s is a google document\n" % f['title'])
+                                                self.SendLogUpdate("%s is a google document\n" % f['title'])
+                                                #self.emit("%s is a google document\n" % f['title'])
                 except:
                         self.logger.error("Failed to sync directory\n")
-                        self.emit("Failed to sync directory\n")
+                        self.SendLogUpdate("Failed to sync directory\n")
                         raise
 
         def SyncLocalDirectory(self):
@@ -784,17 +809,20 @@ class GoSyncModel(GObject.GObject):
                                 try:
                                         dirpath = os.path.join(root, names)
                                         drivepath = dirpath.split(self.mirror_directory+'/')[1]
+                                        self.SendLogUpdate("Checking file %s..." % drivepath)
                                         f = self.LocateFileOnDrive(drivepath)
+                                        self.SendLogUpdate("Present\n")
                                 except FileListQueryFailed:
                                         # if the file list query failed, we can't delete the local file even if
                                         # its gone in remote drive. Let the next sync come and take care of this
                                         # Log the event though
                                         self.logger.info("File check on remote directory has failed. Aborting local sync.\n")
-                                        self.emit("File check on remote directory has failed. Aborting local sync.\n")
+                                        self.SendLogUpdate("File check on remote directory has failed. Aborting local sync.\n")
                                         return
                                 except(FileNotFound, FolderNotFound):
                                         try:
                                                 self.logger.info("Searching for file in Trash...")
+                                                self.SendLogUpdate("Not found. Searching for file in trash...\n")
                                                 f = self.LocateFileOnDrive(drivepath, include_trash=True)
                                                 if f and os.path.exists(dirpath) and os.path.isfile(dirpath):
                                                         continue
@@ -841,6 +869,7 @@ class GoSyncModel(GObject.GObject):
                         for names in files:
                                 try:
                                         dirpath = os.path.join(root, names)
+                                        self.SendLogUpdate("Checking file %s..." % dirpath)
                                         drivepath = dirpath.split(self.mirror_directory+'/')[1]
                                         f = self.LocateFileOnDrive(drivepath)
                                         continue
@@ -870,6 +899,7 @@ class GoSyncModel(GObject.GObject):
                 for names in dirs:
                         try:
                                 dirpath = os.path.join(root, names)
+                                self.logger.info("Checking directory %s..." % dirpath)
                                 drivepath = dirpath.split(self.mirror_directory+'/')[1]
                                 f = self.LocateFileOnDrive(drivepath)
                                 continue
@@ -921,11 +951,9 @@ class GoSyncModel(GObject.GObject):
         def run(self):
                 while True:
                         self.syncRunning.wait()
-
-                        self.logger.debug("Sync thread unblocked")
                         self.sync_lock.acquire()
-                        self.logger.debug("Sync lock is acquired")
 
+                        self.logger.info("Starting new sync :RN")
                         try:
                                 self.validate_sync_settings()
                         except FolderNotFound as e:
@@ -946,30 +974,28 @@ class GoSyncModel(GObject.GObject):
                                                 self.SyncRemoteDirectory(d[1], d[0])
                                         else:
                                                 self.SyncRemoteDirectory('root', '')
-                                                self.logger.info("done\n")
+                                                self.logger.info(" Downloads Done\n")
                                                 self.SendLogUpdate( "Done\n")
                                 self.logger.info("Syncing local...")
                                 self.SendLogUpdate( "Syncing local...")
                                 self.SyncLocalDirectory()
                                 self.logger.info("done\n")
                                 self.SendLogUpdate( "Done\n")
-                                if self.updates_done:
-                                        self.usageCalculateEvent.set()
-                                #self.emit('sync_done', 0)
                         except:
                                 print("SYNC DONE ERROR")
                                 self.SendLogUpdate( "SYNC DONE ERROR")
-                                #self.emit('sync_done', -1)
 
                         self.sync_lock.release()
+                        self.syncRunning.clear()
 
                         time_left = 600
 
                         while (time_left):
-                                #self.emit('sync_timer', ('Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))))
                                 time_left -= 1
-                                self.syncRunning.wait()
+                                self.logger.info("time left: %d\n" % time_left)
+                                #self.syncRunning.wait()
                                 time.sleep(1)
+                        self.logger.info("Going for another sync")
 
         def GetFileSize(self, f):
                 try:
@@ -986,7 +1012,6 @@ class GoSyncModel(GObject.GObject):
                                 self.fcount += 1
                                 self.emit('calculate_usage_update', self.fcount)
                                 if f['mimeType'] == 'application/vnd.google-apps.folder':
-                                        self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
                                         self.calculateUsageOfFolder(f['id'])
                                 else:
                                         if not self.IsGoogleDocument(f):
@@ -1034,7 +1059,6 @@ class GoSyncModel(GObject.GObject):
                                         self.drive_usage_dict['Document Size'] = self.driveDocumentUsage
                                         self.drive_usage_dict['Photo Size'] = self.drivePhotoUsage
                                         self.drive_usage_dict['Others Size'] = self.driveOthersUsage
-                                        pickle.dump(self.driveTree, open(self.tree_pickle_file, "wb"))
                                         self.config_dict['Drive Usage'] = self.drive_usage_dict
                                         self.SaveConfig()
                                 except:
@@ -1049,7 +1073,47 @@ class GoSyncModel(GObject.GObject):
                                 self.logger.error("Failed to get the total number of files in drive\n")
                         self.calculatingDriveUsage = False
 
+        def CreateTreeOfFolder(self, folder_id):
+                try:
+                        file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
+                        for f in file_list:
+                                if f['mimeType'] == 'application/vnd.google-apps.folder':
+                                        self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
+                                        self.logger.info("Addeded Folder %s" % f['title'])
+                                        self.CreateTreeOfFolder(f['id'])
+
+                except:
+                        raise
+
+        def CreateDriveDirectoryTree(self):
+                while True:
+                        print "Drive tree creation thread started"
+                        self.logger.info("Drive tree creation thread started")
+                        self.drive_tree_creator_event.wait()
+                        self.logger.info("Drive tree creation started.\n")
+                        self.sync_lock.acquire()
+                        try:
+                                self.CreateTreeOfFolder('root')
+                                pickle.dump(self.driveTree, open(self.tree_pickle_file, "wb"))
+                                self.drive_tree_created = 1
+                        except:
+                                self.drive_tree_created = 0
+                                self.driveTree = None
+                                self.emit('drive_tree_creation_done', -1)
+                                self.logger.error("Drive tree creation failed with exception.")
+                        self.sync_lock.release()
+                        self.emit('drive_tree_creation_done', 0)
+                        self.drive_tree_creator_event.clear()
+                        self.logger.info("Drive tree creation successful!")
+
         def GetDriveDirectoryTree(self):
+                if self.drive_tree_created == 0:
+                        if not self.drive_tree_creator_event.is_set():
+                                self.drive_tree_creator_event.set()
+                                print "Drive tree not created. Triggerred now"
+                        return None
+
+                self.logger.info("Copying drive tree")
                 self.sync_lock.acquire()
                 ref_tree = copy.deepcopy(self.driveTree)
                 self.sync_lock.release()

@@ -29,9 +29,6 @@ if platform.dist()[0] == 'Ubuntu':
 	gi.require_version('AppIndicator3', '0.1')
 	from gi.repository import AppIndicator3 as appindicator
 
-def menuitem_close_response(w, buf):
-	Gtk.main_quit()
-
 class GoSyncActivityLogWindowGTK(Gtk.Window):
         def __init__(self):
                 Gtk.Window.__init__(self, title=APP_NAME + " Log Window")
@@ -123,12 +120,12 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 		self.spinner = Gtk.Spinner()
 
 		self.DriveTreeReady = 0
-		if not self.sync_model.IsCalculatingDriveUsage():	
-			driveTree = self.sync_model.GetDriveDirectoryTree()
+                self.sync_model.connect('drive_tree_creation_done', self.UsageCalculationDone)
+                driveTree = self.sync_model.GetDriveDirectoryTree()
+		if driveTree:
 			self.MakeDriveTree(driveTree.GetRoot(), None)
 			self.DriveTreeReady = 1
-
-		if self.sync_model.IsCalculatingDriveUsage():
+                else:
 			self.slabel.set_text("    Reading drive. Please wait...")
 			self.spinner.start()
 
@@ -141,7 +138,7 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 		if self.DriveTreeReady:
 			self.SyncEntries()
 
-		self.sync_model.connect('calculate_usage_done', self.UsageCalculationDone)
+		#self.sync_model.connect('calculate_usage_done', self.UsageCalculationDone)
 		self.show_all()
 
 	def RefreshTree(self):
@@ -282,7 +279,7 @@ class GoSyncControllerGTK(object):
 			ind = appindicator.Indicator.new(APP_ID, "GoSync", appindicator.IndicatorCategory.APPLICATION_STATUS)
 			ind.set_status(appindicator.IndicatorStatus.ACTIVE)
 			ind.set_icon_theme_path(RESOURCE_PATH)
-			ind.set_icon("GoSyncIcon-32")
+			ind.set_icon("GoSyncIcon-64")
 			self.CreateMenu()
 			ind.set_menu(self.menu)
 		else:
@@ -291,6 +288,11 @@ class GoSyncControllerGTK(object):
 			self.tray.connect('popup-menu', self.OnRightClick)
 
 		Gtk.main()
+
+        def menuitem_close_response(self, w, buf):
+                print "need to quit application"
+                self.sync_model.StopSync()
+	        Gtk.main_quit()
 
         def SyncLogUpdate(self, obj, log_message):
                 self.activity_log_buffer.insert(self.activity_log_buffer.get_end_iter(), log_message)
@@ -342,7 +344,7 @@ class GoSyncControllerGTK(object):
 		self.menu.append(about)
 
 		menu_item = Gtk.MenuItem("Quit")
-		menu_item.connect("activate", menuitem_close_response, "Quit")
+		menu_item.connect("activate", self.menuitem_close_response, "Quit")
 		self.menu.append(menu_item)
 
 		self.menu.show_all()
