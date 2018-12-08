@@ -215,7 +215,6 @@ class GoSyncModel(GObject.GObject):
                 self.sync_thread.daemon = True
                 self.usage_calc_thread.daemon = True
                 self.syncRunning = threading.Event()
-                self.syncRunning.clear()
                 self.usageCalculateEvent = threading.Event()
                 #self.logger.info("Starting the usage calculator thread.")
                 #self.usageCalculateEvent.set()
@@ -243,7 +242,8 @@ class GoSyncModel(GObject.GObject):
                                 self.drive_usage_dict = {}
                                 self.updates_done = 1
 
-                        self.logger.info("All done.")
+                self.logger.info("All done.")
+                self.syncRunning.set()
 
         def do_sync_udpate(self, arg):
 	        print("class method for sync_update called with argument", arg)
@@ -986,16 +986,13 @@ class GoSyncModel(GObject.GObject):
                                 self.SendLogUpdate( "SYNC DONE ERROR")
 
                         self.sync_lock.release()
-                        self.syncRunning.clear()
 
                         time_left = 600
 
                         while (time_left):
-                                time_left -= 1
+                                time_left -= 10
                                 self.logger.info("time left: %d\n" % time_left)
-                                #self.syncRunning.wait()
-                                time.sleep(1)
-                        self.logger.info("Going for another sync")
+                                time.sleep(10)
 
         def GetFileSize(self, f):
                 try:
@@ -1114,9 +1111,7 @@ class GoSyncModel(GObject.GObject):
                         return None
 
                 self.logger.info("Copying drive tree")
-                self.sync_lock.acquire()
                 ref_tree = copy.deepcopy(self.driveTree)
-                self.sync_lock.release()
                 return ref_tree
 
         def IsCalculatingDriveUsage(self):

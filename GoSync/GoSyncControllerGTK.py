@@ -202,7 +202,6 @@ class GoSyncSettingsWindowGTK(Gtk.Window):
 				self.sync_model.SetSyncSelection(f)
 			else:
 				self.sync_model.RemoveSyncSelection(f)
-			print "Toggle '%s' to: %s Full Path: %s" % (model[path][0], model[path][1], model[path][2].GetPath())
 		return
 
 	def OnSyncAllToggled(self, button):
@@ -241,7 +240,7 @@ class GoSyncControllerGTK(object):
 							message_format=e)
 			mdialog.connect("response", self.dialog_response)
 			mdialog.show()
-			Gtk.main()
+                        Gtk.main()
 			return
 		except ConfigLoadFailed as e:
 			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING,
@@ -279,7 +278,7 @@ class GoSyncControllerGTK(object):
 			ind = appindicator.Indicator.new(APP_ID, "GoSync", appindicator.IndicatorCategory.APPLICATION_STATUS)
 			ind.set_status(appindicator.IndicatorStatus.ACTIVE)
 			ind.set_icon_theme_path(RESOURCE_PATH)
-			ind.set_icon("GoSyncIcon-64")
+			ind.set_icon("GoSyncIcon-16")
 			self.CreateMenu()
 			ind.set_menu(self.menu)
 		else:
@@ -290,7 +289,6 @@ class GoSyncControllerGTK(object):
 		Gtk.main()
 
         def menuitem_close_response(self, w, buf):
-                print "need to quit application"
                 self.sync_model.StopSync()
 	        Gtk.main_quit()
 
@@ -384,14 +382,8 @@ class GoSyncControllerGTK(object):
 		widget.destroy()
 
 	def menuitem_settings_response(self, w, buf):
-                if self.sync_model.syncRunning.is_set():
-			mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING,
-							buttons=Gtk.ButtonsType.OK, message_format="Sync is running right now. Cannot show settings window. Please try after sometime")
-			mdialog.connect("response", self.settings_warning_dialog_response)
-			mdialog.show()
-                else:
-		        self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
-		        self.settings_window.show_all()
+		self.settings_window = GoSyncSettingsWindowGTK(self.sync_model)
+		self.settings_window.show_all()
 
         def menuitem_activity_log_response(self, w, buf):
                 self.activity_log_window = GoSyncActivityLogWindowGTK()
