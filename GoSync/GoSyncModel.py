@@ -216,7 +216,7 @@ class GoSyncModel(GObject.GObject):
                 self.usage_calc_thread.daemon = True
                 self.syncRunning = threading.Event()
                 self.usageCalculateEvent = threading.Event()
-                #self.logger.info("Starting the usage calculator thread.")
+                self.logger.info("Starting the usage calculator thread.")
                 #self.usageCalculateEvent.set()
 
                 self.logger.info("Scheduling file modification notify handler.")
@@ -243,7 +243,8 @@ class GoSyncModel(GObject.GObject):
                                 self.updates_done = 1
 
                 self.logger.info("All done.")
-                self.syncRunning.set()
+                #self.syncRunning.set()
+                self.syncRunning.clear()
 
         def do_sync_udpate(self, arg):
 	        print("class method for sync_update called with argument", arg)
@@ -253,6 +254,7 @@ class GoSyncModel(GObject.GObject):
                 self.usage_calc_thread.start()
                 self.drive_tree_creator_thread.start()
                 self.observer.start()
+                self.syncRunning.set()
 
         def IsUserLoggedIn(self):
                 return self.is_logged_in
@@ -1027,13 +1029,10 @@ class GoSyncModel(GObject.GObject):
 
         def calculateUsage(self):
                 while True:
-                        self.usageCalculateEvent.wait()
+                        if any(self.drive_usage_dict):
+                                self.usageCalculateEvent.wait()
+
                         self.usageCalculateEvent.clear()
-
-                        if self.drive_usage_dict and not self.updates_done:
-		                self.emit('calculate_usage_done', 0)
-                                continue
-
                         self.updates_done = 0
                         self.calculatingDriveUsage = True
                         self.driveAudioUsage = 0
@@ -1043,12 +1042,8 @@ class GoSyncModel(GObject.GObject):
                         self.driveOthersUsage = 0
                         self.fcount = 0
                         try:
-                                #self.totalFilesToCheck = self.TotalFilesInDrive()
-                                #self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
-		                #self.emit('calculate_usage_started', 0)
                                 try:
                                         self.calculateUsageOfFolder('root')
-		                        self.emit('calculate_usage_done', 0)
                                         self.drive_usage_dict['Total Files'] = self.totalFilesToCheck
                                         self.drive_usage_dict['Total Size'] = long(self.about_drive['quotaBytesTotal'])
                                         self.drive_usage_dict['Audio Size'] = self.driveAudioUsage
@@ -1064,9 +1059,7 @@ class GoSyncModel(GObject.GObject):
                                         self.driveDocumentUsage = 0
                                         self.drivePhotoUsage = 0
                                         self.driveOthersUsage = 0
-		                        self.emit('calculate_usage_done', -1)
                         except:
-		                self.emit('calculate_usage_done', -1)
                                 self.logger.error("Failed to get the total number of files in drive\n")
                         self.calculatingDriveUsage = False
 
@@ -1116,6 +1109,9 @@ class GoSyncModel(GObject.GObject):
 
         def IsCalculatingDriveUsage(self):
                 return self.calculatingDriveUsage
+
+        def GetTotalQuota(self):
+                return self.drive_usage_dict['Total Size']
 
         def GetAudioUsage(self):
                 return self.driveAudioUsage

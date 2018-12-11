@@ -24,6 +24,7 @@ from gi.repository import Gtk, GdkPixbuf
 from GoSyncModel import GoSyncModel, ClientSecretsNotFound, ConfigLoadFailed, AuthenticationFailed
 from defines import *
 from threading import Timer
+from GoSyncDriveUsage import GoSyncDriveUsageWindowGTK
 
 if platform.dist()[0] == 'Ubuntu':
 	gi.require_version('AppIndicator3', '0.1')
@@ -310,6 +311,8 @@ class GoSyncControllerGTK(object):
 
 		menu_item = Gtk.MenuItem(("%s used of %s") % (self.FileSizeHumanize(long(self.aboutdrive['quotaBytesUsed'])),
 								self.FileSizeHumanize(long(self.aboutdrive['quotaBytesTotal']))))
+                menu_item.connect("activate", self.ShowDriveUsageWindow)
+
 		self.menu.append(menu_item)
 
 		menu_item = Gtk.SeparatorMenuItem()
@@ -370,11 +373,9 @@ class GoSyncControllerGTK(object):
 
 	def menuitem_startstop_response(self, item, buf):
 		if item.get_label() == "Pause":
-			print("Stop the sync")
 			item.set_label("Start")
 			self.sync_model.StopSync()
 		else:
-			print("Start the sync")
 			item.set_label("Pause")
 			self.sync_model.StartSync()
 
@@ -389,6 +390,20 @@ class GoSyncControllerGTK(object):
                 self.activity_log_window = GoSyncActivityLogWindowGTK()
                 self.activity_log_window.SetLogBuffer(self.activity_log_buffer)
                 self.activity_log_window.show_all()
+
+        def drive_usage_dialog_response(self, widget, response_id):
+		widget.destroy()
+
+        def ShowDriveUsageWindow(self, w):
+                if self.sync_model.IsCalculatingDriveUsage():
+                        mformat="Your categorical drive usage is being calculated.\n\nPlease try after sometime."
+                        mdialog = Gtk.MessageDialog(parent=None, flags=Gtk.DialogFlags.MODAL, type=Gtk.MessageType.WARNING,
+						    buttons=Gtk.ButtonsType.OK, message_format=mformat)
+                        mdialog.connect("response", self.drive_usage_dialog_response)
+			mdialog.show()
+                else:
+                        driveUsageWindow = GoSyncDriveUsageWindowGTK(self.sync_model)
+                        driveUsageWindow.show_all()
 
 	def FileSizeHumanize(self, size):
 		size = abs(size)
