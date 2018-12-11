@@ -489,13 +489,13 @@ class GoSyncModel(object):
             self.logger.exception("move failed\n")
 
     def MoveObservedFile(self, src_path, dest_path):
-	from_drive_path = src_path.split(self.mirror_directory+'/')[1]
-	to_drive_path = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
+        from_drive_path = src_path.split(self.mirror_directory+'/')[1]
+        to_drive_path = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
 
         self.logger.debug("Moving file %s to %s\n" % (from_drive_path, to_drive_path))
 
-	try:
-	    ftm = self.LocateFileOnDrive(from_drive_path)
+        try:
+            ftm = self.LocateFileOnDrive(from_drive_path)
             self.logger.debug("MoveObservedFile: Found source file on drive\n")
             if os.path.dirname(from_drive_path) == '':
                 sf = 'root'
@@ -524,29 +524,29 @@ class GoSyncModel(object):
             except:
                 self.logger.error("MoveObservedFile: Unknown error while locating destination folder on drive.\n")
                 return
-	except FileNotFound:
+        except FileNotFound:
             self.logger.error("MoveObservedFile: Couldn't locate file on drive.\n")
             return
-	except FileListQueryFailed:
-	    self.logger.error("MoveObservedFile: File Query failed. aborting.\n")
-	    return
-	except FolderNotFound:
-	    self.logger.error("MoveObservedFile: Folder not found\n")
-	    return
-	except:
-	    self.logger.error("MoveObservedFile: Unknown error while moving file.\n")
-	    return
+        except FileListQueryFailed:
+            self.logger.error("MoveObservedFile: File Query failed. aborting.\n")
+            return
+        except FolderNotFound:
+            self.logger.error("MoveObservedFile: Folder not found\n")
+            return
+        except:
+            self.logger.error("MoveObservedFile: Unknown error while moving file.\n")
+            return
 
     def HandleMovedFile(self, src_path, dest_path):
         drive_path1 = os.path.dirname(src_path.split(self.mirror_directory+'/')[1])
-	drive_path2 = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
+        drive_path2 = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
 
-	if drive_path1 == drive_path2:
+        if drive_path1 == drive_path2:
             self.logger.debug("Rename file\n")
-	    self.RenameObservedFile(src_path, self.PathLeaf(dest_path))
-	else:
+            self.RenameObservedFile(src_path, self.PathLeaf(dest_path))
+        else:
             self.logger.debug("Move file\n")
-	    self.MoveObservedFile(src_path, dest_path)
+            self.MoveObservedFile(src_path, dest_path)
 
     ####### DOWNLOAD SECTION #######
     def MakeFileListQuery(self, query):
