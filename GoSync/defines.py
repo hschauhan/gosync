@@ -48,7 +48,7 @@ HERE=os.path.abspath(os.path.dirname(__file__))
 INI_FILE = os.path.join(APP_PATH, "gosync.ini")
 
 TRAY_TOOLTIP = 'GoSync - A Google Drive Client for Linux'
-TRAY_ICON = HERE + '/resources/GoSyncIcon.png'
+TRAY_ICON = HERE + '/resources/GoSyncIcon-16.png'
 APP_ICON = HERE + '/resources/GoSyncIcon-16.png'
 ABOUT_ICON = HERE + '/resources/GoSyncIcon-64.png'
 APP_NAME = 'GoSync'

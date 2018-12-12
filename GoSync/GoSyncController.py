@@ -27,7 +27,8 @@ from GoSyncSettingsPage import SettingsPage
 
 ID_SYNC_TOGGLE = wx.NewId()
 
-mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX)
+#mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX)
+mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.MAXIMIZE_BOX)
 HERE=os.path.abspath(os.path.dirname(__file__))
 
 class PageAccount(wx.Panel):
@@ -80,26 +81,10 @@ class PageAccount(wx.Panel):
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
 
 class GoSyncController(wx.Frame):
-    def __init__(self):
+    def __init__(self, sync_model):
         wx.Frame.__init__(self, None, title="GoSync", size=(520,400), style=mainWindowStyle)
 
-        try:
-            self.sync_model = GoSyncModel()
-        except ClientSecretsNotFound:
-            dial = wx.MessageDialog(None, 'Client secret file was not found!\n\nDo you want to know how to create one?\n',
-                                    'Error', wx.YES_NO | wx.ICON_EXCLAMATION)
-            res = dial.ShowModal()
-
-            if res == wx.ID_YES:
-                webbrowser.open(CLIENT_SECRET_HELP_SITE, new=1, autoraise=True)
-
-            sys.exit(1)
-        except:
-            dial = wx.MessageDialog(None, 'GoSync failed to initialize\n',
-                                    'Error', wx.OK | wx.ICON_EXCLAMATION)
-            res = dial.ShowModal()
-            sys.exit(1)
-
+        self.sync_model = sync_model
         self.aboutdrive = self.sync_model.DriveInfo()
 
         title_string = "GoSync --%s (%s used of %s)" % (self.aboutdrive['name'],
@@ -108,20 +93,6 @@ class GoSyncController(wx.Frame):
         self.SetTitle(title_string)
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
-        menuBar = wx.MenuBar()
-        menu = wx.Menu()
-
-        menu_txt = 'Pause/Resume Sync'
-
-        self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
-
-        menu.AppendSeparator()
-        self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
-        self.CreateMenuItem(menu, 'E&xit', self.OnExit, os.path.join(HERE, 'resources/exit.png'))
-
-        menuBar.Append(menu, '&File')
-
-        self.SetMenuBar(menuBar)
 
         # Here we create a panel and a notebook on the panel
         p = wx.Panel(self, size=self.GetSize())
@@ -160,8 +131,6 @@ class GoSyncController(wx.Frame):
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_INV_FOLDER,
                                           self.OnSyncInvalidFolder)
 
-        self.sync_model.SetTheBallRolling()
-
     def OnSyncInvalidFolder(self, event):
         dial = wx.MessageDialog(None, 'Some of the folders to be sync\'ed were not found on remote server.\nPlease check.\n',
                                 'Error', wx.OK | wx.ICON_EXCLAMATION)
@@ -184,6 +153,74 @@ class GoSyncController(wx.Frame):
         else:
             self.sb.SetStatusText("Sync failed. Please check the logs.")
 
+    def FileSizeHumanize(self, size):
+        size = abs(size)
+        if (size==0):
+            return "0B"
+        units = ['B','KB','MB','GB','TB','PB','EB','ZB','YB']
+        p = math.floor(math.log(size, 2)/10)
+        return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
+
+
+class GoSyncTaskBarIcon(wx.TaskBarIcon):
+    TBMENU_SETTINGS = wx.NewId()
+    TBMENU_CLOSE    = wx.NewId()
+    TBMENU_NONE     = wx.NewId()
+    TBMENU_ABOUT    = wx.NewId()
+    #----------------------------------------------------------------------
+    def __init__(self, frame):
+        wx.TaskBarIcon.__init__(self)
+
+        self.frame = frame
+        self.tbIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
+        self.SetIcon(self.tbIcon, "GoSync")
+
+        # bind some evts
+        self.Bind(wx.EVT_MENU, self.OnTaskBarClose, id=self.TBMENU_CLOSE)
+        self.Bind(wx.EVT_TASKBAR_LEFT_DOWN, self.OnTaskBarLeftClick)
+
+        try:
+            self.sync_model = GoSyncModel()
+        except ClientSecretsNotFound:
+            dial = wx.MessageDialog(None, 'Client secret file was not found!\n\nDo you want to know how to create one?\n',
+                                    'Error', wx.YES_NO | wx.ICON_EXCLAMATION)
+            res = dial.ShowModal()
+
+            if res == wx.ID_YES:
+                webbrowser.open(CLIENT_SECRET_HELP_SITE, new=1, autoraise=True)
+            sys.exit(1)
+        except:
+            dial = wx.MessageDialog(None, 'GoSync failed to initialize\n',
+                                    'Error', wx.OK | wx.ICON_EXCLAMATION)
+            res = dial.ShowModal()
+            sys.exit(1)
+
+        self.sync_model.SetTheBallRolling()
+        self.aboutdrive = self.sync_model.DriveInfo()
+
+    #----------------------------------------------------------------------
+    def CreatePopupMenu(self, evt=None):
+        """
+        This method is called by the base class when it needs to popup
+        the menu for the default EVT_RIGHT_DOWN evt.  Just create
+        the menu how you want it and return it from this function,
+        the base class takes care of the rest.
+        """
+        menu = wx.Menu()
+        menu.Append(self.TBMENU_NONE, self.aboutdrive['user']['emailAddress'])
+        menu.AppendSeparator()
+        if (self.sync_model.IsSyncEnabled()):
+            self.CreateMenuItem(menu, "Pause", self.OnToggleSync)
+        else:
+            self.CreateMenuItem(menu, "Resume", self.OnToggleSync)
+        self.CreateMenuItem(menu, "Settings", self.OnSettings)
+        menu.AppendSeparator()
+        self.CreateMenuItem(menu, "About", self.OnAbout, os.path.join(HERE, 'resources/info.png'))
+        menu.AppendSeparator()
+        self.CreateMenuItem(menu, "Exit", self.OnExit, os.path.join(HERE, 'resources/exit.png'))
+        return menu
+
+    #-----------------------------------------------------------------------
     def CreateMenuItem(self, menu, label, func, icon=None, id=None):
         if id:
             item = wx.MenuItem(menu, id, label)
@@ -201,29 +238,40 @@ class GoSyncController(wx.Frame):
         menu.AppendItem(item)
         return item
 
-    def FileSizeHumanize(self, size):
-        size = abs(size)
-        if (size==0):
-            return "0B"
-        units = ['B','KB','MB','GB','TB','PB','EB','ZB','YB']
-        p = math.floor(math.log(size, 2)/10)
-        return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
+    def OnSettings(self, evt):
+        self.controller = GoSyncController(self.sync_model)
+        self.controller.Center()
+        self.controller.Show()
 
-    def OnExit(self, event):
-        dial = wx.MessageDialog(None, 'GoSync will stop syncing files until restarted.\nAre you sure to quit?\n',
-                                'Question', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
-        res = dial.ShowModal()
-        if res == wx.ID_YES:
-            wx.CallAfter(self.Destroy)
-
+    #----------------------------------------------------------------------
     def OnToggleSync(self, evt):
         if self.sync_model.IsSyncEnabled():
             self.sync_model.StopSync()
-            self.sb.SetStatusText("Paused", 1)
         else:
             self.sync_model.StartSync()
-            self.sb.SetStatusText("Running", 1)
 
+    #----------------------------------------------------------------------
+    def OnTaskBarActivate(self, evt):
+        """"""
+        pass
+
+    #----------------------------------------------------------------------
+    def OnTaskBarClose(self, evt):
+        """
+        Destroy the taskbar icon and frame from the taskbar icon itself
+        """
+        self.frame.Close()
+
+    #----------------------------------------------------------------------
+    def OnTaskBarLeftClick(self, evt):
+        """
+        Create the right-click menu
+        """
+        menu = self.CreatePopupMenu()
+        self.PopupMenu(menu)
+        menu.Destroy()
+
+    #----------------------------------------------------------------------
     def OnAbout(self, evt):
         """About GoSync"""
         about = wx.AboutDialogInfo()
@@ -237,3 +285,12 @@ class GoSyncController(wx.Frame):
         about.AddDeveloper(APP_DEVELOPER)
         about.AddArtist(APP_DEVELOPER)
         wx.AboutBox(about)
+
+    #----------------------------------------------------------------------
+    def OnExit(self, event):
+        dial = wx.MessageDialog(None, 'GoSync will stop syncing files until restarted.\nAre you sure to quit?\n',
+                                'Question', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
+        res = dial.ShowModal()
+        if res == wx.ID_YES:
+            self.frame.Close()
+            wx.CallAfter(self.Destroy)

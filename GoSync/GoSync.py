@@ -19,18 +19,24 @@
 
 import sys, os, wx, GoSyncController, GoSyncModel
 from os.path import expanduser, dirname, relpath
-from GoSyncController import GoSyncController
+from GoSyncController import GoSyncController, GoSyncTaskBarIcon
 from defines import *
 
 # Add the current path to gosync path.
 sys.path.insert(0, APP_PATH)
 
+#Hack to keep application exiting when only
+#taskbar icon is launched.
+class GoSync(wx.App):
+    def OnInit(self):
+        frame = wx.Frame(None, -1)
+        self.SetTopWindow(frame)
+        GoSyncTaskBarIcon(frame)
+        return True
+
 def main():
     os.chdir(APP_PATH)
-    app = wx.PySimpleApp()
-    controller = GoSyncController()
-    controller.Center()
-    controller.Show()
+    app = GoSync()
     app.MainLoop()
 
 if __name__ == "__main__":
