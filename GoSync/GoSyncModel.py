@@ -90,6 +90,7 @@ class GoSyncModel(object):
         self.account_dict = {}
         self.drive_usage_dict = {}
         self.config=None
+        self.creatingDriveTreeReplica = 0
 
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
@@ -104,7 +105,7 @@ class GoSyncModel(object):
         if not os.path.exists(self.settings_file) or \
                 not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
-            sfile.write("save_credentials: False")
+            sfile.write("save_credentials: True")
             sfile.write("\n")
             sfile.write("save_credentials_file: ")
             sfile.write(self.credential_file)
@@ -112,6 +113,14 @@ class GoSyncModel(object):
             sfile.write('client_config_file: ' + self.client_secret_file + "\n")
             sfile.write("save_credentials_backend: file\n")
             sfile.close()
+
+        self.logger = logging.getLogger(APP_NAME)
+        self.logger.setLevel(logging.INFO)
+        fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
+        fh.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
 
         self.observer = Observer()
         self.DoAuthenticate()
@@ -132,7 +141,6 @@ class GoSyncModel(object):
         except:
             raise
 
-
         self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self),
                                                      self.mirror_directory, recursive=True)
 
@@ -144,24 +152,35 @@ class GoSyncModel(object):
         self.syncRunning = threading.Event()
         self.syncRunning.clear()
         self.usageCalculateEvent = threading.Event()
-        self.usageCalculateEvent.set()
+        if not self.drive_usage_dict:
+            self.logger.info("No drive tree usage found. Re-calculating...")
+            self.usageCalculateEvent.set()
+        else:
+            self.logger.info("Found saved drive tree usage. Not calculating untils updates are done in the drive.")
+            self.usageCalculateEvent.clear()
 
-        self.logger = logging.getLogger(APP_NAME)
-        self.logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
-        fh.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        self.logger.addHandler(fh)
+        self.calculateDriveTreeReplicaEvent = threading.Event()
+        self.calculateDriveTreeReplicaEvent.clear()
         if not os.path.exists(self.tree_pickle_file):
             self.driveTree = GoogleDriveTree()
+            self.calculateDriveTreeReplicaEvent.set()
+            self.logger.info("Didn't find saved tree in configuration. Fetching remote tree structure")
         else:
             self.driveTree = pickle.load(open(self.tree_pickle_file, "rb"))
+            self.logger.info("Loading saved drive tree")
 
-    def SetTheBallRolling(self):
+    def StartServices(self):
         self.sync_thread.start()
         self.usage_calc_thread.start()
         self.observer.start()
+        self.syncRunning.set()
+
+    #def ShutdownServices(self):
+    #    self.syncRunning.clear()
+    #    self.usageCalculateEvent.clear()
+    #    self.observer.stop()
+    #    self.usage_calc_thread.stop()
+    #    self.sync_thread.stop()
 
     def IsUserLoggedIn(self):
         return self.is_logged_in
@@ -185,7 +204,6 @@ class GoSyncModel(object):
                 try:
                     self.config_dict = self.config[self.user_email]
                     self.sync_selection = self.config_dict['Sync Selection']
-                    print self.config_dict['Drive Usage']
                     try:
                         self.drive_usage_dict = self.config_dict['Drive Usage']
                         self.totalFilesToCheck = self.drive_usage_dict['Total Files']
@@ -195,9 +213,14 @@ class GoSyncModel(object):
                         self.driveDocumentUsage = self.drive_usage_dict['Document Size']
                         self.drivePhotoUsage = self.drive_usage_dict['Photo Size']
                         self.driveOthersUsage = self.drive_usage_dict['Others Size']
+                        self.logger.info("Loaded drive tree usage")
+                        print self.drive_usage_dict
                     except:
+                        self.logger.error("Failed to load drive tree usage. Forcing to recalculate")
+                        self.drive_usage_dict = {}
                         pass
                 except:
+                    self.logger.error("Failed to load sync selection")
                     pass
 
                 f.close()
@@ -220,7 +243,21 @@ class GoSyncModel(object):
     def DoAuthenticate(self):
         try:
             self.authToken = GoogleAuth(self.settings_file)
-            self.authToken.LocalWebserverAuth()
+            print "Generating auth token %s" % self.credential_file
+            self.authToken.LoadCredentialsFile(self.credential_file)
+            if self.authToken is None:
+                print "Going for local webserver auth"
+                self.authToken.LocalWebserverAuth()
+            elif self.authToken.access_token_expired:
+                print "Token expired. Refreshing token"
+                self.authToken.Refresh()
+            else:
+                print "Authorizing with saved credentials"
+                self.authToken.Authorize()
+
+            print "Authorization done. Saving file"
+            self.authToken.SaveCredentialsFile(self.credential_file)
+            print "Authorization file saved"
             self.drive = GoogleDrive(self.authToken)
             self.is_logged_in = True
         except:
@@ -758,7 +795,6 @@ class GoSyncModel(object):
                 self.fcount += 1
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_UPDATE, self.fcount)
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
-                    self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
                     self.calculateUsageOfFolder(f['id'])
                 else:
                     if not self.IsGoogleDocument(f):
@@ -781,10 +817,9 @@ class GoSyncModel(object):
             self.usageCalculateEvent.wait()
             self.usageCalculateEvent.clear()
 
-            self.sync_lock.acquire()
             if self.drive_usage_dict and not self.updates_done:
+                self.logger.info("No updates done. Not calculating drive tree usage.")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
-                self.sync_lock.release()
                 continue
 
             self.updates_done = 0
@@ -795,6 +830,7 @@ class GoSyncModel(object):
             self.drivePhotoUsage = 0
             self.driveOthersUsage = 0
             self.fcount = 0
+            self.logger.info("Staring the drive tree usage calculation")
             try:
                 self.totalFilesToCheck = self.TotalFilesInDrive()
                 self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
@@ -810,9 +846,9 @@ class GoSyncModel(object):
                     self.drive_usage_dict['Document Size'] = self.driveDocumentUsage
                     self.drive_usage_dict['Photo Size'] = self.drivePhotoUsage
                     self.drive_usage_dict['Others Size'] = self.driveOthersUsage
-                    pickle.dump(self.driveTree, open(self.tree_pickle_file, "wb"))
                     self.config_dict['Drive Usage'] = self.drive_usage_dict
                     self.SaveConfig()
+                    self.logger.info("Drive tree usage calculation successful!")
                 except:
                     self.driveAudioUsage = 0
                     self.driveMoviesUsage = 0
@@ -820,21 +856,54 @@ class GoSyncModel(object):
                     self.drivePhotoUsage = 0
                     self.driveOthersUsage = 0
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
+                    self.logger.error("Drive tree usage calculation failed!")
             except:
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, -1)
                 self.logger.error("Failed to get the total number of files in drive\n")
 
             self.calculatingDriveUsage = False
-            self.sync_lock.release()
+
+    def GetFoldersInFolder(self, folder_id):
+        try:
+            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
+            for f in file_list:
+                if f['mimeType'] == 'application/vnd.google-apps.folder':
+                    self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
+                    self.GetFoldersInFolder(f['id'])
+        except:
+            raise
+
+    def CreateDriveTreeReplica(self):
+        while True:
+            self.creatingDriveTreeReplica = 0
+            self.calculateDriveTreeReplicaEvent.wait()
+            self.calculateDriveTreeReplicaEvent.clear()
+
+            if not self.updates_done or not self.force_update_tree:
+                self.logger.info("No updates or force tree update. Not creating drive tree replica")
+                continue
+
+            GoSyncEventController().PostEvent(GOSYNC_EVENT_TREE_RETRIEVAL_STARTED, 0)
+            self.creatingDriveTreeReplica = 1
+            self.logger.info("Creating drive tree replica")
+            try:
+                self.GetFoldersInFolder('root')
+                pickle.dump(self.driveTree, open(self.tree_pickle_file, "wb"))
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_TREE_RETRIEVAL_DONE, 0)
+                self.logger.info("Created drive tree replica")
+            except:
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_TREE_RETRIEVAL_FAILED, -1)
+                self.logger.error("Failed to retrieve remote drive tree.")
 
     def GetDriveDirectoryTree(self):
-        self.sync_lock.acquire()
         ref_tree = copy.deepcopy(self.driveTree)
-        self.sync_lock.release()
         return ref_tree
 
     def IsCalculatingDriveUsage(self):
         return self.calculatingDriveUsage
+
+    def IsCreatingDriveTreeReplica(self):
+        return self.creatingDriveTreeReplica
 
     def GetAudioUsage(self):
         return self.driveAudioUsage
@@ -885,7 +954,7 @@ class FileModificationNotifyHandler(PatternMatchingEventHandler):
         self.sync_handler = sync_handler
 
     def on_created(self, evt):
-        self.sync_handler.logger.debug("Observer: %s created\n" % evt.src_path)
+        self.sync_handler.logger.info("Observer: %s created\n" % evt.src_path)
         self.sync_handler.UploadObservedFile(evt.src_path)
 
     def on_moved(self, evt):

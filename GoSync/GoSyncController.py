@@ -40,14 +40,22 @@ class PageAccount(wx.Panel):
 
         aboutdrive = sync_model.DriveInfo()
         self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['quotaBytesTotal']), -1)
-        self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
-        self.driveUsageBar.SetMoviesUsage(0)
-        self.driveUsageBar.SetDocumentUsage(0)
-        self.driveUsageBar.SetOthersUsage(0)
-        self.driveUsageBar.SetAudioUsage(0)
-        self.driveUsageBar.SetPhotoUsage(0)
-        self.driveUsageBar.RePaint()
-
+        if self.sync_model.IsCalculatingDriveUsage():
+            self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
+            self.driveUsageBar.SetMoviesUsage(0)
+            self.driveUsageBar.SetDocumentUsage(0)
+            self.driveUsageBar.SetOthersUsage(0)
+            self.driveUsageBar.SetAudioUsage(0)
+            self.driveUsageBar.SetPhotoUsage(0)
+            self.driveUsageBar.RePaint()
+        else:
+            self.driveUsageBar.SetStatusMessage("Your Google drive usage is shown below:")
+            self.driveUsageBar.SetMoviesUsage(self.sync_model.GetMovieUsage())
+            self.driveUsageBar.SetDocumentUsage(self.sync_model.GetDocumentUsage())
+            self.driveUsageBar.SetOthersUsage(self.sync_model.GetOthersUsage())
+            self.driveUsageBar.SetAudioUsage(self.sync_model.GetAudioUsage())
+            self.driveUsageBar.SetPhotoUsage(self.sync_model.GetPhotoUsage())
+            self.driveUsageBar.RePaint()
 
         mainsizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -131,6 +139,11 @@ class GoSyncController(wx.Frame):
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_INV_FOLDER,
                                           self.OnSyncInvalidFolder)
 
+        self.Bind(wx.EVT_CLOSE, self.OnClose)
+
+    def OnClose(self, event):
+        self.Hide()
+
     def OnSyncInvalidFolder(self, event):
         dial = wx.MessageDialog(None, 'Some of the folders to be sync\'ed were not found on remote server.\nPlease check.\n',
                                 'Error', wx.OK | wx.ICON_EXCLAMATION)
@@ -195,8 +208,9 @@ class GoSyncTaskBarIcon(wx.TaskBarIcon):
             res = dial.ShowModal()
             sys.exit(1)
 
-        self.sync_model.SetTheBallRolling()
+        self.sync_model.StartServices()
         self.aboutdrive = self.sync_model.DriveInfo()
+        self.controller = GoSyncController(self.sync_model)
 
     #----------------------------------------------------------------------
     def CreatePopupMenu(self, evt=None):
@@ -239,7 +253,6 @@ class GoSyncTaskBarIcon(wx.TaskBarIcon):
         return item
 
     def OnSettings(self, evt):
-        self.controller = GoSyncController(self.sync_model)
         self.controller.Center()
         self.controller.Show()
 
@@ -292,5 +305,7 @@ class GoSyncTaskBarIcon(wx.TaskBarIcon):
                                 'Question', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
         res = dial.ShowModal()
         if res == wx.ID_YES:
+            #self.sync_model.ShutdownServices()
+            wx.CallAfter(self.controller.Destroy)
             self.frame.Close()
             wx.CallAfter(self.Destroy)

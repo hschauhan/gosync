@@ -17,6 +17,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import os, wx
+import wx.lib.newevent
 
 GOSYNC_EVENT_CALCULATE_USAGE_STARTED = '_gosync_calculate_usage_started'
 GOSYNC_EVENT_CALCULATE_USAGE_UPDATE = '_gosync_calculate_usage_update'
@@ -27,14 +28,22 @@ GOSYNC_EVENT_SYNC_DONE = '_gosync_sync_done'
 GOSYNC_EVENT_SYNC_TIMER = '_gosync_sync_timer'
 GOSYNC_EVENT_SYNC_INV_FOLDER = '_gosync_sync_invalid_folder'
 
+GOSYNC_EVENT_TREE_RETRIEVAL_STARTED = '_gosync_tree_retrieve_started'
+GOSYNC_EVENT_TREE_RETRIEVAL_DONE = '_gosync_tree_retrieve_done'
+GOSYNC_EVENT_TREE_RETRIEVAL_FAILED = '_gosync_tree_retrieve_failed'
+
 GOSYNC_EVENT_ID_SYNC_STARTED = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_UPDATE = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_DONE = wx.NewId()
 GOSYNC_EVENT_ID_CALCULATE_USAGE_STARTED = wx.NewId()
 GOSYNC_EVENT_ID_CALCULATE_USAGE_UPDATE = wx.NewId()
 GOSYNC_EVENT_ID_CALCULATE_USAGE_DONE = wx.NewId()
+GOSYNC_EVENT_ID_TREE_RETRIEVAL_STARTED = wx.NewId()
+GOSYNC_EVENT_ID_TREE_RETRIEVAL_DONE = wx.NewId()
+GOSYNC_EVENT_ID_TREE_RETRIEVAL_FAILED = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_TIMER = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_INV_FOLDER = wx.NewId()
+
 
 class GoSyncEvent(wx.PyEvent):
     def __init__(self, event, data):
@@ -54,13 +63,19 @@ class GoSyncEventController(object):
                     GOSYNC_EVENT_CALCULATE_USAGE_UPDATE: GOSYNC_EVENT_ID_CALCULATE_USAGE_UPDATE,
                     GOSYNC_EVENT_CALCULATE_USAGE_DONE: GOSYNC_EVENT_ID_CALCULATE_USAGE_DONE,
                     GOSYNC_EVENT_SYNC_TIMER: GOSYNC_EVENT_ID_SYNC_TIMER,
-                    GOSYNC_EVENT_SYNC_INV_FOLDER: GOSYNC_EVENT_ID_SYNC_INV_FOLDER}
+                    GOSYNC_EVENT_SYNC_INV_FOLDER: GOSYNC_EVENT_ID_SYNC_INV_FOLDER,
+                    GOSYNC_EVENT_TREE_RETRIEVAL_STARTED: GOSYNC_EVENT_ID_TREE_RETRIEVAL_STARTED,
+                    GOSYNC_EVENT_TREE_RETRIEVAL_DONE: GOSYNC_EVENT_ID_TREE_RETRIEVAL_DONE,
+                    GOSYNC_EVENT_TREE_RETRIEVAL_FAILED: GOSYNC_EVENT_ID_TREE_RETRIEVAL_FAILED}
     _sync_listeners = {GOSYNC_EVENT_SYNC_STARTED:[],
                        GOSYNC_EVENT_SYNC_UPDATE: [],
                        GOSYNC_EVENT_SYNC_DONE: [],
                        GOSYNC_EVENT_CALCULATE_USAGE_STARTED: [],
                        GOSYNC_EVENT_CALCULATE_USAGE_UPDATE: [],
                        GOSYNC_EVENT_CALCULATE_USAGE_DONE: [],
+                       GOSYNC_EVENT_TREE_RETRIEVAL_STARTED: [],
+                       GOSYNC_EVENT_TREE_RETRIEVAL_DONE: [],
+                       GOSYNC_EVENT_TREE_RETRIEVAL_FAILED: [],
                        GOSYNC_EVENT_SYNC_TIMER: [],
                        GOSYNC_EVENT_SYNC_INV_FOLDER: []}
 

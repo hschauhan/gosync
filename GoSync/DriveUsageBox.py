@@ -24,7 +24,7 @@ class DriveUsageBox(wx.Panel):
 
         font = wx.Font(10, wx.SWISS, wx.NORMAL, wx.NORMAL)
 
-        bar_size = (parent.GetSize()[0], 18)
+        bar_size = (parent.GetSize()[0], 28)
         self.barWidth = bar_size[0]
         self.barHeight = bar_size[1]
         self.bar_position = (parent.GetPosition()[0]+3, parent.GetPosition()[1]+3)
@@ -119,7 +119,11 @@ class DriveUsageBox(wx.Panel):
         legendSizer.Add(legendFree, 0, wx.ALL|wx.EXPAND, 5)
         legendSizer.Add(legendFreeText, 0, wx.ALL|wx.EXPAND, 5)
 
+        refreshButton = wx.Button(self, 3, "Refresh")
+
         mainSizer.Add(legendSizer)
+        mainSizer.Add(refreshButton, 50, wx.ALL | wx.CENTER, 5)
+
         self.SetSizerAndFit(mainSizer)
 
     def FileSizeHumanize(self, size):
@@ -159,6 +163,7 @@ class DriveUsageBox(wx.Panel):
 
     def SetDocumentUsage(self, size):
         self.documentPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
+        print ("Document size: %d" % size)
         self.legendDocumentText.SetLabel('Documents ' + self.FileSizeHumanize(size))
 
     def SetOthersUsage(self, size):
