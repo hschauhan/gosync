@@ -49,7 +49,7 @@ class SettingsPage(wx.Panel):
         self.Bind(CT.EVT_TREE_ITEM_CHECKED, self.ItemChecked)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_TREE_RETRIEVAL_DONE,
-                                          self.RefreshTree)
+                                          self.UpdateTreeDisplay)
         wx.EVT_CHECKBOX(self, self.cb.GetId(), self.SyncSetting)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
@@ -106,6 +106,9 @@ class SettingsPage(wx.Panel):
         if self.sync_model.IsCreatingDriveTreeReplica():
             return
 
+        self.sync_model.ForceUpdateTreeReplica()
+
+    def UpdateTreeDisplay(self):
         driveTree = self.sync_model.GetDriveDirectoryTree()
         self.dstc.DeleteAllItems()
         self.dstc_root = self.dstc.AddRoot("Google Drive Root")

@@ -91,6 +91,7 @@ class GoSyncModel(object):
         self.drive_usage_dict = {}
         self.config=None
         self.creatingDriveTreeReplica = 0
+        self.force_update_tree = 0
 
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
@@ -147,11 +148,14 @@ class GoSyncModel(object):
         self.sync_lock = threading.Lock()
         self.sync_thread = threading.Thread(target=self.run)
         self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
+        self.drive_replica_thread = threading.Thread(target=self.CreateDriveTreeReplica)
         self.sync_thread.daemon = True
         self.usage_calc_thread.daemon = True
+        self.drive_replica_thread.daemon = True
         self.syncRunning = threading.Event()
         self.syncRunning.clear()
         self.usageCalculateEvent = threading.Event()
+
         if not self.drive_usage_dict:
             self.logger.info("No drive tree usage found. Re-calculating...")
             self.usageCalculateEvent.set()
@@ -161,6 +165,7 @@ class GoSyncModel(object):
 
         self.calculateDriveTreeReplicaEvent = threading.Event()
         self.calculateDriveTreeReplicaEvent.clear()
+
         if not os.path.exists(self.tree_pickle_file):
             self.driveTree = GoogleDriveTree()
             self.calculateDriveTreeReplicaEvent.set()
@@ -174,13 +179,12 @@ class GoSyncModel(object):
         self.usage_calc_thread.start()
         self.observer.start()
         self.syncRunning.set()
+        self.drive_replica_thread.start()
 
-    #def ShutdownServices(self):
-    #    self.syncRunning.clear()
-    #    self.usageCalculateEvent.clear()
-    #    self.observer.stop()
-    #    self.usage_calc_thread.stop()
-    #    self.sync_thread.stop()
+    def ShutdownServices(self):
+        self.syncRunning.clear()
+        self.usageCalculateEvent.clear()
+        self.observer.stop()
 
     def IsUserLoggedIn(self):
         return self.is_logged_in
@@ -863,6 +867,10 @@ class GoSyncModel(object):
 
             self.calculatingDriveUsage = False
 
+    def ForceUpdateTreeReplica(self):
+        self.force_update_tree = 1
+        self.calculateDriveTreeReplicaEvent.set()
+
     def GetFoldersInFolder(self, folder_id):
         try:
             file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
@@ -879,7 +887,7 @@ class GoSyncModel(object):
             self.calculateDriveTreeReplicaEvent.wait()
             self.calculateDriveTreeReplicaEvent.clear()
 
-            if not self.updates_done or not self.force_update_tree:
+            if not self.updates_done and not self.force_update_tree:
                 self.logger.info("No updates or force tree update. Not creating drive tree replica")
                 continue
 
