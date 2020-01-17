@@ -38,7 +38,8 @@ class PageAccount(wx.Panel):
         self.totalFiles = 0
 
         aboutdrive = sync_model.DriveInfo()
-        self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['quotaBytesTotal']), -1)
+        self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['storageQuota']['limit']), -1)
+#        self.driveUsageBar = DriveUsageBox(self, long(15), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
         self.driveUsageBar.SetDocumentUsage(0)
@@ -60,7 +61,11 @@ class PageAccount(wx.Panel):
                                           self.OnUsageCalculationUpdate)
 
     def OnUsageCalculationDone(self, event):
+#alain
+        print("event_data %s" % event.data)
+#alain
         if not event.data:
+#        if True :
             self.driveUsageBar.SetStatusMessage("Your Google Drive usage is shown below:")
             self.driveUsageBar.SetMoviesUsage(self.sync_model.GetMovieUsage())
             self.driveUsageBar.SetDocumentUsage(self.sync_model.GetDocumentUsage())
@@ -102,9 +107,17 @@ class GoSyncController(wx.Frame):
 
         self.aboutdrive = self.sync_model.DriveInfo()
 
-        title_string = "GoSync --%s (%s used of %s)" % (self.aboutdrive['name'],
-                                                        self.FileSizeHumanize(long(self.aboutdrive['quotaBytesUsed'])),
-                                                        self.FileSizeHumanize(long(self.aboutdrive['quotaBytesTotal'])))
+#alain
+#        title_string = "GoSync --%s (%s used of %s)" % (self.aboutdrive['name'],
+        title_string = "GoSync --%s (%s used of %s)" % ('Drive de Test',
+
+#alain
+self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])),
+#self.FileSizeHumanize(long(0)),
+
+#alain
+self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
+#self.FileSizeHumanize(long(15)))
         self.SetTitle(title_string)
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
