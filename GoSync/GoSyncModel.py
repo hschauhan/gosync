@@ -375,10 +375,12 @@ class GoSyncModel(object):
 #                                        "parents": [{"kind": "drive#fileLink", "id": parent_id}]})
 #        upfile.Upload()
         file_metadata = {'name': dirname,
-                        'mimetype':'application/vnd.google-apps.folder'}
+                        'mimeType':'application/vnd.google-apps.folder'}
         file_metadata['parents'] = [parent_id]
         upfile = self.drive.files().create(body=file_metadata, fields='id').execute()
-        print 'File ID: %s' % upfile.get('id')
+#        upfile = self.drive.files().create(body=file_metadata).execute()
+        print 'CreateDirectoryInParent, Name : %s' % dirname
+        print 'CreateDirectoryInParent, Returned File ID: %s' % upfile.get('id')
 
     def CreateDirectoryByPath(self, dirpath):
         self.logger.debug("create directory: %s\n" % dirpath)
@@ -416,16 +418,17 @@ class GoSyncModel(object):
         filename = self.PathLeaf(file_path)
 #        upfile = self.drive.CreateFile({'title': filename,
         file_metadata = {'name': filename}
-        file_metadata['parents'] = [parent_id]
+        file_metadata['parents'] = [parent]
 	#alain
-        media = MediaFileUpload(filename, resumable=True)
+#        media = MediaFileUpload('/home/robillal/Google Drive/testgosynch@gmail.com/GoSync.log', resumable=True)
+        media = MediaFileUpload(file_path, resumable=True)
         upfile = self.drive.files().create(body=file_metadata,
                                     media_body=media,
                                     fields='id').execute()
         print 'File ID: %s' % upfile.get('id')
 #        upfile = self.drive.CreateFile()
-        upfile.SetContentFile(file_path)
-        upfile.Upload()
+#        upfile.SetContentFile(file_path)
+#        upfile.Upload()
 
     def UploadFile(self, file_path):
         if os.path.isfile(file_path):
@@ -472,12 +475,16 @@ class GoSyncModel(object):
 
     def RenameFile(self, file_object, new_title):
         try:
+#alain
 #            file = {'title': new_title}
             file = {'name': new_title}
 
-            updated_file = self.authToken.service.files().patch(fileId=file_object['id'],
+#            updated_file = self.authToken.service.files().patch(fileId=file_object['id'],
 #                                                                body=file, fields='title').execute()
-                                                                body=file, fields='name').execute()
+#                                                                body=file, fields='name').execute()
+            updated_file = self.drive.files().update( body= file,
+                                                         fileId=file_object['id'],
+                                                         fields='id, appProperties').execute()
             return updated_file
         except errors.HttpError, error:
             self.logger.error('An error occurred while renaming file: %s' % error)
@@ -503,7 +510,9 @@ class GoSyncModel(object):
 
     def TrashFile(self, file_object):
         try:
-            self.authToken.service.files().trash(fileId=file_object['id']).execute()
+            file_metadata = {'trashed':True}
+#            self.authToken.service.files().trash(fileId=file_object['id']).execute()
+            self.drive.files().update(body=file_metadata,fileId=file_object['id']).execute()
 #            self.logger.info({"TRASH_FILE: File %s deleted successfully.\n" % file_object['title']})
             self.logger.info({"TRASH_FILE: File %s deleted successfully.\n" % file_object['name']})
         except errors.HttpError, error:
@@ -541,10 +550,16 @@ class GoSyncModel(object):
             else:
                 sid = 'root'
 
-            updated_file = self.authToken.service.files().patch(fileId=src_file['id'],
-                                                                body=src_file,
-                                                                addParents=did,
-                                                                removeParents=sid).execute()
+#alain
+#            updated_file = self.authToken.service.files().patch(fileId=src_file['id'],
+#                                                                body=src_file,
+#                                                                addParents=did,
+#                                                                removeParents=sid).execute()
+            updated_file = self.drive.files().update(fileId=src_file['id'],
+                                    addParents=did,
+                                    removeParents=sid,
+                                    fields='id, parents').execute()
+
         except:
             self.logger.exception("move failed\n")
 
@@ -665,7 +680,7 @@ class GoSyncModel(object):
         return self.TotalFilesInFolder()
 
     def DownloadFileByObject(self, file_obj, download_path):
-        dfile = self.drive.CreateFile({'id': file_obj['id']})
+#        dfile = self.drive.CreateFile({'id': file_obj['id']})
 #        abs_filepath = os.path.join(download_path, file_obj['title'])
         abs_filepath = os.path.join(download_path, file_obj['name'])
         if os.path.exists(abs_filepath):
@@ -679,7 +694,15 @@ class GoSyncModel(object):
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
             GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
                                               {'Downloading %s' % fd})
-            dfile.GetContentFile(abs_filepath)
+#            dfile = self.drive.CreateFile({'id': file_obj['id']})
+#            dfile.GetContentFile(abs_filepath)
+            request = drive.files().get_media(fileId=file_obj['id'])
+#            fh = io.BytesIO()
+            fh = io.FileIO(filename, 'wb')
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()            
             self.updates_done = 1
             self.logger.info('Done\n')
 
@@ -817,7 +840,9 @@ class GoSyncModel(object):
 
             self.sync_lock.release()
 
-            time_left = 600
+#alain
+#            time_left = 600
+            time_left = 10
 
             while (time_left):
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
