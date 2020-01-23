@@ -62,11 +62,7 @@ class PageAccount(wx.Panel):
                                           self.OnUsageCalculationUpdate)
 
     def OnUsageCalculationDone(self, event):
-#alain
-        print("event_data %s" % event.data)
-#alain
         if not event.data:
-#        if True :
             self.driveUsageBar.SetStatusMessage("Your Google Drive usage is shown below:")
             self.driveUsageBar.SetMoviesUsage(self.sync_model.GetMovieUsage())
             self.driveUsageBar.SetDocumentUsage(self.sync_model.GetDocumentUsage())
