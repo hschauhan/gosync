@@ -37,6 +37,7 @@ class PageAccount(wx.Panel):
 
         self.sync_model = sync_model
         self.totalFiles = 0
+        self.time_left=0
 
         aboutdrive = sync_model.DriveInfo()
         self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['storageQuota']['limit']), -1)
@@ -124,7 +125,7 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         menu_txt = 'Pause/Resume Sync'
 
         self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
-#        self.CreateMenuItem(menu, 'Synch Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
+        self.CreateMenuItem(menu, 'Synch Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
 
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
@@ -225,6 +226,9 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
                                 'Question', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
         res = dial.ShowModal()
         if res == wx.ID_YES:
+            if self.sync_model.IsSyncEnabled():
+                self.sync_model.StopSync()
+                self.sb.SetStatusText("Paused", 1)                
             wx.CallAfter(self.Destroy)
 
     def OnToggleSync(self, evt):
@@ -234,6 +238,9 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         else:
             self.sync_model.StartSync()
             self.sb.SetStatusText("Running", 1)
+
+    def OnSyncNow(self, evt):
+        self.sync_model.time_left=1
 
     def OnAbout(self, evt):
         """About GoSync"""

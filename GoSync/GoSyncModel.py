@@ -17,6 +17,7 @@
 #
 
 import sys, os, wx, ntpath, defines, threading, hashlib, time, copy, io
+import shutil
 #from pydrive.auth import GoogleAuth
 #from pydrive.drive import GoogleDrive
 from os.path import expanduser
@@ -98,7 +99,8 @@ class GoSyncModel(object):
 
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
-            raise ClientSecretsNotFound()
+#Migration V3 API
+#            raise ClientSecretsNotFound()
 
         if not os.path.exists(self.base_mirror_directory):
             os.mkdir(self.base_mirror_directory, 0755)
@@ -807,7 +809,9 @@ class GoSyncModel(object):
                 except:
                     if os.path.exists(dirpath) and os.path.isdir(dirpath):
                         self.logger.info("%s folder has been removed from drive. Deleting local copy\n" % dirpath)
-                        os.remove(dirpath)
+#to delete none empty directory recursively
+#                        os.remove(dirpath)
+                        shutil.rmtree(dirpath, ignore_errors=False, onerror=None)
 
 
     def validate_sync_settings(self):
@@ -863,13 +867,13 @@ class GoSyncModel(object):
             self.sync_lock.release()
 
 #alain
-#            time_left = 600
-            time_left = 10
+            self.time_left = 600
+#            self.time_left = 10
 
-            while (time_left):
+            while (self.time_left):
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
-                                                  {'Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))})
-                time_left -= 1
+                                                  {'Sync starts in %02dm:%02ds' % ((self.time_left/60), (self.time_left % 60))})
+                self.time_left -= 1
                 self.syncRunning.wait()
                 time.sleep(1)
 
