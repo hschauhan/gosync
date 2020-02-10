@@ -866,15 +866,11 @@ class GoSyncModel(object):
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
 
             self.sync_lock.release()
-
-<<<<<<< HEAD
             self.time_left = 600
 #
-=======
-#alain
+#alain to review time to wait
             self.time_left = 600
 #            self.time_left = 10
->>>>>>> ee9cc822a78d08bd418e55a6b344c10928ee52a8
 
             while (self.time_left):
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
