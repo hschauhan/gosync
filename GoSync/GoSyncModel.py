@@ -141,6 +141,7 @@ class GoSyncModel(object):
         if not os.path.exists(self.config_file):
             self.CreateDefaultConfigFile()
 #alain todo : add default config logic in method
+#alain todo
         try:
             self.LoadConfig()
         except:
