@@ -26,6 +26,7 @@ from GoSyncEvents import *
 from GoSyncSettingsPage import SettingsPage
 
 ID_SYNC_TOGGLE = wx.NewId()
+ID_SYNC_NOW = wx.NewId()
 
 mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX)
 HERE=os.path.abspath(os.path.dirname(__file__))
@@ -36,9 +37,11 @@ class PageAccount(wx.Panel):
 
         self.sync_model = sync_model
         self.totalFiles = 0
+        self.time_left=0
 
         aboutdrive = sync_model.DriveInfo()
-        self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['quotaBytesTotal']), -1)
+        self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['storageQuota']['limit']), -1)
+#        self.driveUsageBar = DriveUsageBox(self, long(15), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
         self.driveUsageBar.SetDocumentUsage(0)
@@ -102,9 +105,17 @@ class GoSyncController(wx.Frame):
 
         self.aboutdrive = self.sync_model.DriveInfo()
 
-        title_string = "GoSync --%s (%s used of %s)" % (self.aboutdrive['name'],
-                                                        self.FileSizeHumanize(long(self.aboutdrive['quotaBytesUsed'])),
-                                                        self.FileSizeHumanize(long(self.aboutdrive['quotaBytesTotal'])))
+#alain
+#        title_string = "GoSync --%s (%s used of %s)" % (self.aboutdrive['name'],
+        title_string = "GoSync --%s (%s used of %s)" % ('Drive de Test',
+
+#alain
+self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])),
+#self.FileSizeHumanize(long(0)),
+
+#alain
+self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
+#self.FileSizeHumanize(long(15)))
         self.SetTitle(title_string)
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
@@ -114,6 +125,7 @@ class GoSyncController(wx.Frame):
         menu_txt = 'Pause/Resume Sync'
 
         self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
+        self.CreateMenuItem(menu, 'Synch Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
 
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
@@ -214,6 +226,9 @@ class GoSyncController(wx.Frame):
                                 'Question', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
         res = dial.ShowModal()
         if res == wx.ID_YES:
+            if self.sync_model.IsSyncEnabled():
+                self.sync_model.StopSync()
+                self.sb.SetStatusText("Paused", 1)                
             wx.CallAfter(self.Destroy)
 
     def OnToggleSync(self, evt):
@@ -223,6 +238,9 @@ class GoSyncController(wx.Frame):
         else:
             self.sync_model.StartSync()
             self.sb.SetStatusText("Running", 1)
+
+    def OnSyncNow(self, evt):
+        self.sync_model.time_left=1
 
     def OnAbout(self, evt):
         """About GoSync"""
