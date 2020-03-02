@@ -87,10 +87,10 @@ class GoSyncModel(object):
 
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
         self.credential_file = os.path.join(self.config_path, "credentials.json")
+        self.client_pickle = os.path.join(self.config_path, "token.pickle")
         self.settings_file = os.path.join(self.config_path, "settings.yaml")
         self.base_mirror_directory = os.path.join(os.environ['HOME'], "Google Drive")
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
-        self.client_pickle = os.path.join(os.environ['HOME'], '.gosync', 'token.pickle')
         self.sync_selection = []
         self.config_file = os.path.join(os.environ['HOME'], '.gosync', 'gosyncrc')
         self.config_dict = {}
@@ -252,7 +252,7 @@ class GoSyncModel(object):
                 if creds and creds.expired and creds.refresh_token:
                     creds.refresh(Request())
                 else:
-                    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+                    flow = InstalledAppFlow.from_client_secrets_file(self.credential_file, SCOPES)
                     creds = flow.run_local_server(port=0)
                 # Save the credentials for the next run
                 with open(self.client_pickle, 'wb') as token:
