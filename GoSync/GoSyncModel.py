@@ -90,6 +90,7 @@ class GoSyncModel(object):
         self.settings_file = os.path.join(self.config_path, "settings.yaml")
         self.base_mirror_directory = os.path.join(os.environ['HOME'], "Google Drive")
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
+        self.client_pickle = os.path.join(os.environ['HOME'], '.gosync', 'token.pickle')
         self.sync_selection = []
         self.config_file = os.path.join(os.environ['HOME'], '.gosync', 'gosyncrc')
         self.config_dict = {}
@@ -243,8 +244,8 @@ class GoSyncModel(object):
             # The file token.pickle stores the user's access and refresh tokens, and is
             # created automatically when the authorization flow completes for the first
             # time.
-            if os.path.exists('token.pickle'):
-                with open('token.pickle', 'rb') as token:
+            if os.path.exists(self.client_pickle):
+                with open(self.client_pickle, 'rb') as token:
                     creds = pickle.load(token)
             # If there are no (valid) credentials available, let the user log in.
             if not creds or not creds.valid:
@@ -254,7 +255,7 @@ class GoSyncModel(object):
                     flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
                     creds = flow.run_local_server(port=0)
                 # Save the credentials for the next run
-                with open('token.pickle', 'wb') as token:
+                with open(self.client_pickle, 'wb') as token:
                     pickle.dump(creds, token)
 
             service = build('drive', 'v3', credentials=creds)
@@ -867,13 +868,10 @@ class GoSyncModel(object):
 
             self.sync_lock.release()
             self.time_left = 600
-<<<<<<< HEAD
-=======
 #
 #alain to review time to wait
             self.time_left = 600
 #            self.time_left = 10
->>>>>>> 80d1df98c49cd7361619dc07a0165e18865d6198
 
             while (self.time_left):
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
