@@ -110,8 +110,7 @@ class GoSyncModel(object):
 #        if not os.path.exists(self.client_secret_file):
 #            raise ClientSecretsNotFound()
 
-        if not os.path.exists(self.settings_file) or \
-                not os.path.isfile(self.settings_file):
+        if not os.path.exists(self.settings_file) or not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
             sfile.write("save_credentials: False")
             sfile.write("\n")
@@ -150,9 +149,7 @@ class GoSyncModel(object):
 
 
 #alain todo : confirm this is to monitor file changes
-        self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self),
-                                                     self.mirror_directory, recursive=True)
-
+        self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self), self.mirror_directory, recursive=True)
         self.sync_lock = threading.Lock()
         self.sync_thread = threading.Thread(target=self.run)
         self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
@@ -467,6 +464,7 @@ class GoSyncModel(object):
             if dirpath == '':
                 self.logger.debug('Creating %s file in root\n' % file_path)
                 self.CreateRegularFile(file_path, 'root', newfile)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'UpLoading %s' % file_path})
             else:
                 try:
                     f = self.LocateFolderOnDrive(dirpath)
@@ -486,6 +484,7 @@ class GoSyncModel(object):
         self.sync_lock.acquire()
         self.UploadFile(file_path)
         self.sync_lock.release()
+##        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
 
     def RenameFile(self, file_object, new_title):
         try:
@@ -922,7 +921,7 @@ class GoSyncModel(object):
             raise
 
     def calculateUsage(self):
-       while True:
+        while True:
             self.usageCalculateEvent.wait()
             self.usageCalculateEvent.clear()
 
@@ -943,8 +942,7 @@ class GoSyncModel(object):
             try:
                 self.totalFilesToCheck = self.TotalFilesInDrive()
                 self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
-                                                  self.totalFilesToCheck)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED, self.totalFilesToCheck)
                 try:
                     self.calculateUsageOfFolder('root')
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
