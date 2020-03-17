@@ -27,7 +27,8 @@ sys.path.insert(0, APP_PATH)
 
 def main():
     os.chdir(APP_PATH)
-    app = wx.PySimpleApp()
+#    app = wx.PySimpleApp() : Deprecated
+    app = wx.App(False)
     controller = GoSyncController()
     controller.Center()
     controller.Show()

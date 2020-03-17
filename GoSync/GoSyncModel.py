@@ -1,9 +1,8 @@
 # gosync is an open source Google Drive(TM) sync application for Linux
+# modify it under the terms of the GNU General Public License
 #
 # Copyright (C) 2015 Himanshu Chauhan
-#
 # This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 2
 # of the License, or (at your option) any later version.
 #
@@ -15,20 +14,27 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
 
-import sys, os, wx, ntpath, defines, threading, hashlib, time, copy
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
+import sys, os, wx, ntpath, defines, threading, hashlib, time, copy, io
+import shutil
+#from pydrive.auth import GoogleAuth
+#from pydrive.drive import GoogleDrive
 from os.path import expanduser
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
 from threading import Thread
 from apiclient.errors import HttpError
 from apiclient import errors
+from apiclient.http import MediaFileUpload
+from apiclient.http import MediaIoBaseDownload
 import logging
 from defines import *
 from GoSyncEvents import *
 from GoSyncDriveTree import GoogleDriveTree
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 import json, pickle
 
 class ClientSecretsNotFound(RuntimeError):
@@ -81,6 +87,7 @@ class GoSyncModel(object):
 
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
         self.credential_file = os.path.join(self.config_path, "credentials.json")
+        self.client_pickle = os.path.join(self.config_path, "token.pickle")
         self.settings_file = os.path.join(self.config_path, "settings.yaml")
         self.base_mirror_directory = os.path.join(os.environ['HOME'], "Google Drive")
         self.client_secret_file = os.path.join(os.environ['HOME'], '.gosync', 'client_secrets.json')
@@ -93,16 +100,17 @@ class GoSyncModel(object):
 
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
-            raise ClientSecretsNotFound()
+#Migration V3 API
+#            raise ClientSecretsNotFound()
 
         if not os.path.exists(self.base_mirror_directory):
             os.mkdir(self.base_mirror_directory, 0755)
 
-        if not os.path.exists(self.client_secret_file):
-            raise ClientSecretsNotFound()
+#Migration V3 API
+#        if not os.path.exists(self.client_secret_file):
+#            raise ClientSecretsNotFound()
 
-        if not os.path.exists(self.settings_file) or \
-                not os.path.isfile(self.settings_file):
+        if not os.path.exists(self.settings_file) or not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
             sfile.write("save_credentials: False")
             sfile.write("\n")
@@ -115,9 +123,15 @@ class GoSyncModel(object):
 
         self.observer = Observer()
         self.DoAuthenticate()
-        self.about_drive = self.authToken.service.about().get().execute()
+#Migration V3 API
+#        self.about_drive = self.authToken.service.about().get().execute()
+        self.about_drive = self.drive.about().get(fields='user, storageQuota').execute()
+
+#Migration V3 API
+#        self.about_drive = {'about'}
         self.user_email = self.about_drive['user']['emailAddress']
 
+#create subdir linked to active account
         self.mirror_directory = os.path.join(self.base_mirror_directory, self.user_email)
         if not os.path.exists(self.mirror_directory):
             os.mkdir(self.mirror_directory, 0755)
@@ -126,16 +140,16 @@ class GoSyncModel(object):
 
         if not os.path.exists(self.config_file):
             self.CreateDefaultConfigFile()
-
+#alain todo : add default config logic in method
+#alain todo
         try:
             self.LoadConfig()
         except:
             raise
 
 
-        self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self),
-                                                     self.mirror_directory, recursive=True)
-
+#alain todo : confirm this is to monitor file changes
+        self.iobserv_handle = self.observer.schedule(FileModificationNotifyHandler(self), self.mirror_directory, recursive=True)
         self.sync_lock = threading.Lock()
         self.sync_thread = threading.Thread(target=self.run)
         self.usage_calc_thread = threading.Thread(target=self.calculateUsage)
@@ -185,7 +199,8 @@ class GoSyncModel(object):
                 try:
                     self.config_dict = self.config[self.user_email]
                     self.sync_selection = self.config_dict['Sync Selection']
-                    print self.config_dict['Drive Usage']
+#remove
+#                    print self.config_dict['Drive Usage']
                     try:
                         self.drive_usage_dict = self.config_dict['Drive Usage']
                         self.totalFilesToCheck = self.drive_usage_dict['Total Files']
@@ -219,10 +234,35 @@ class GoSyncModel(object):
 
     def DoAuthenticate(self):
         try:
-            self.authToken = GoogleAuth(self.settings_file)
-            self.authToken.LocalWebserverAuth()
-            self.drive = GoogleDrive(self.authToken)
+#Migration V3 API
+            # If modifying these scopes, delete the file token.pickle.
+            SCOPES = ['https://www.googleapis.com/auth/drive']
+            creds = None
+            # The file token.pickle stores the user's access and refresh tokens, and is
+            # created automatically when the authorization flow completes for the first
+            # time.
+            if os.path.exists(self.client_pickle):
+                with open(self.client_pickle, 'rb') as token:
+                    creds = pickle.load(token)
+            # If there are no (valid) credentials available, let the user log in.
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                else:
+                    flow = InstalledAppFlow.from_client_secrets_file(self.credential_file, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                # Save the credentials for the next run
+                with open(self.client_pickle, 'wb') as token:
+                    pickle.dump(creds, token)
+
+            service = build('drive', 'v3', credentials=creds)
+#Migration V3 API
+#            self.authToken = GoogleAuth(self.settings_file)
+#            self.authToken.LocalWebserverAuth()
+#            self.drive = GoogleDrive(self.authToken)
+            self.drive = service
             self.is_logged_in = True
+            return service
         except:
             dial = wx.MessageDialog(None, "Authentication Rejected!\n",
                                     'Information', wx.ID_OK | wx.ICON_EXCLAMATION)
@@ -250,9 +290,13 @@ class GoSyncModel(object):
         mentioned in parent.
         """
         self.logger.debug("GetFolderOnDrive: searching %s on %s... " % (folder_name, parent))
-        file_list = self.drive.ListFile({'q': "'%s' in parents and trashed=false" % parent}).GetList()
+#Migration V3 API
+#        file_list = self.drive.ListFile({'q': "'%s' in parents and trashed=false" % parent}).GetList()
+        file_list = self.MakeFileListQuery("'%s' in parents and trashed=false"  % parent)
         for f in file_list:
-            if f['title'] == folder_name and f['mimeType']=='application/vnd.google-apps.folder':
+#Migration V3 API
+#            if f['title'] == folder_name and f['mimeType']=='application/vnd.google-apps.folder':
+            if f['name'] == folder_name and f['mimeType']=='application/vnd.google-apps.folder':
                 self.logger.debug("Found!\n")
                 return f
 
@@ -280,9 +324,11 @@ class GoSyncModel(object):
 
     def LocateFileInFolder(self, filename, parent='root'):
         try:
-            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
+            file_list = self.MakeFileListQuery("'%s' in parents and trashed=false" % parent)
             for f in file_list:
-                if f['title'] == filename:
+#Migration V3 API
+#                if f['title'] == filename:
+                if f['name'] == filename:
                     return f
 
             raise FileNotFound()
@@ -327,10 +373,21 @@ class GoSyncModel(object):
                 raise
 
     def CreateDirectoryInParent(self, dirname, parent_id='root'):
-        upfile = self.drive.CreateFile({'title': dirname,
-                                        'mimeType': "application/vnd.google-apps.folder",
-                                        "parents": [{"kind": "drive#fileLink", "id": parent_id}]})
-        upfile.Upload()
+#Migration V3 API
+#        upfile = self.drive.CreateFile({'title': dirname,
+#        upfile = self.drive.CreateFile({'name': dirname,
+#                                        'mimeType': "application/vnd.google-apps.folder",
+#                                        "parents": [{"kind": "drive#fileLink", "id": parent_id}]})
+#        upfile.Upload()
+        file_metadata = {'name': dirname,
+                        'mimeType':'application/vnd.google-apps.folder'}
+        file_metadata['parents'] = [parent_id]
+        upfile = self.drive.files().create(body=file_metadata, fields='id').execute()
+#Migration V3 API
+#        upfile = self.drive.files().create(body=file_metadata).execute()
+#remove
+#        print 'CreateDirectoryInParent, Name : %s' % dirname
+#        print 'CreateDirectoryInParent, Returned File ID: %s' % upfile.get('id')
 
     def CreateDirectoryByPath(self, dirpath):
         self.logger.debug("create directory: %s\n" % dirpath)
@@ -366,10 +423,22 @@ class GoSyncModel(object):
     def CreateRegularFile(self, file_path, parent='root', uploaded=False):
         self.logger.debug("Create file %s\n" % file_path)
         filename = self.PathLeaf(file_path)
-        upfile = self.drive.CreateFile({'title': filename,
-                                       "parents": [{"kind": "drive#fileLink", "id": parent}]})
-        upfile.SetContentFile(file_path)
-        upfile.Upload()
+#Migration V3 API
+#        upfile = self.drive.CreateFile({'title': filename,
+        file_metadata = {'name': filename}
+        file_metadata['parents'] = [parent]
+#Migration V3 API
+#        media = MediaFileUpload('/home/robillal/Google Drive/testgosynch@gmail.com/GoSync.log', resumable=True)
+        media = MediaFileUpload(file_path, resumable=True)
+        upfile = self.drive.files().create(body=file_metadata,
+                                    media_body=media,
+                                    fields='id').execute()
+#remove
+#        print 'File ID: %s' % upfile.get('id')
+#Migration V3 API
+#        upfile = self.drive.CreateFile()
+#        upfile.SetContentFile(file_path)
+#        upfile.Upload()
 
     def UploadFile(self, file_path):
         if os.path.isfile(file_path):
@@ -377,7 +446,9 @@ class GoSyncModel(object):
             self.logger.debug("file: %s drivepath is %s\n" % (file_path, drivepath))
             try:
                 f = self.LocateFileOnDrive(drivepath)
-                self.logger.debug('Found file %s on remote (dpath: %s)\n' % (f['title'], drivepath))
+#Migration V3 API
+#                self.logger.debug('Found file %s on remote (dpath: %s)\n' % (f['title'], drivepath))
+                self.logger.debug('Found file %s on remote (dpath: %s)\n' % (f['name'], drivepath))
                 newfile = False
                 self.logger.debug('Checking if they are same... ')
                 if f['md5Checksum'] == self.HashOfFile(file_path):
@@ -385,7 +456,7 @@ class GoSyncModel(object):
                     return
                 else:
                     self.logger.debug('no\n')
-            except (FileNotFound, FolderNotFound):
+            except (FileNotFound, FolderNotFound):	
                 self.logger.debug("A new file!\n")
                 newfile = True
 
@@ -393,6 +464,7 @@ class GoSyncModel(object):
             if dirpath == '':
                 self.logger.debug('Creating %s file in root\n' % file_path)
                 self.CreateRegularFile(file_path, 'root', newfile)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'UpLoading %s' % file_path})
             else:
                 try:
                     f = self.LocateFolderOnDrive(dirpath)
@@ -412,13 +484,21 @@ class GoSyncModel(object):
         self.sync_lock.acquire()
         self.UploadFile(file_path)
         self.sync_lock.release()
+##        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
 
     def RenameFile(self, file_object, new_title):
         try:
-            file = {'title': new_title}
+#Migration V3 API
+#            file = {'title': new_title}
+            file = {'name': new_title}
 
-            updated_file = self.authToken.service.files().patch(fileId=file_object['id'],
-                                                                body=file, fields='title').execute()
+#Migration V3 API
+#            updated_file = self.authToken.service.files().patch(fileId=file_object['id'],
+#                                                                body=file, fields='title').execute()
+#                                                                body=file, fields='name').execute()
+            updated_file = self.drive.files().update( body= file,
+                                                         fileId=file_object['id'],
+                                                         fields='id, appProperties').execute()
             return updated_file
         except errors.HttpError, error:
             self.logger.error('An error occurred while renaming file: %s' % error)
@@ -444,8 +524,13 @@ class GoSyncModel(object):
 
     def TrashFile(self, file_object):
         try:
-            self.authToken.service.files().trash(fileId=file_object['id']).execute()
-            self.logger.info({"TRASH_FILE: File %s deleted successfully.\n" % file_object['title']})
+            file_metadata = {'trashed':True}
+#Migration V3 API
+#            self.authToken.service.files().trash(fileId=file_object['id']).execute()
+            self.drive.files().update(body=file_metadata,fileId=file_object['id']).execute()
+#Migration V3 API
+#            self.logger.info({"TRASH_FILE: File %s deleted successfully.\n" % file_object['title']})
+            self.logger.info({"TRASH_FILE: File %s deleted successfully.\n" % file_object['name']})
         except errors.HttpError, error:
             self.logger.error("TRASH_FILE: HTTP Error\n")
             raise RegularFileTrashFailed()
@@ -481,10 +566,16 @@ class GoSyncModel(object):
             else:
                 sid = 'root'
 
-            updated_file = self.authToken.service.files().patch(fileId=src_file['id'],
-                                                                body=src_file,
-                                                                addParents=did,
-                                                                removeParents=sid).execute()
+#Migration V3 API
+#            updated_file = self.authToken.service.files().patch(fileId=src_file['id'],
+#                                                                body=src_file,
+#                                                                addParents=did,
+#                                                                removeParents=sid).execute()
+            updated_file = self.drive.files().update(fileId=src_file['id'],
+                                    addParents=did,
+                                    removeParents=sid,
+                                    fields='id, parents').execute()
+
         except:
             self.logger.exception("move failed\n")
 
@@ -550,25 +641,37 @@ class GoSyncModel(object):
 
     ####### DOWNLOAD SECTION #######
     def MakeFileListQuery(self, query):
-        # Retry 5 times to get the query
-        for n in range (0, 5):
-            try:
-                return self.drive.ListFile(query).GetList()
-            except HttpError as error:
-                if error.resp.reason in ['userRateLimitExceeded', 'quotaExceeded']:
-                    self.logger.error("user rate limit/quota exceeded. Will try later\n")
-                    time.sleep((2**n) + random.random())
-            except:
-                self.logger.error("MakeFileListQuery: failed with reason %s\n" % error.resp.reason)
-                time.sleep((2**n) + random.random())
-
-        self.logger.error("Can't get the connection back after many retries. Bailing out\n")
+        try:
+            page_token = None
+            filelist = []
+            while True:
+                response = self.drive.files().list(q=query,
+                                      spaces='drive',
+#Migration V3 API
+#                                      fields='nextPageToken, files(*)',
+                                      fields='nextPageToken, files(id, name, mimeType, size, md5Checksum)',
+                                      pageToken=page_token).execute()
+                filelist.extend(response.get('files',[]))
+                page_token = response.get('nextPageToken', None)
+                if page_token is None:
+                    break
+            return filelist
+        except HttpError as error:
+            if error.resp.reason in ['userRateLimitExceeded', 'quotaExceeded']:
+                logger.error("user rate limit/quota exceeded. Will try later\n")
+#            time.sleep((2**n) + random.random())
+        except:
+            logger.error("MakeFileListQuery: failed with reason %s\n" % error.resp.reason)
+#        time.sleep((2**n) + random.random())
+#    self.logger.error("Can't get the connection back after many retries. Bailing out\n")
         raise FileListQueryFailed
 
     def TotalFilesInFolder(self, parent='root'):
         file_count = 0
         try:
-            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
+#Migration V3 API
+#            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
+            file_list = self.MakeFileListQuery("'%s' in parents and trashed=false"  % parent)
             for f in file_list:
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                     file_count += self.TotalFilesInFolder(f['id'])
@@ -580,6 +683,8 @@ class GoSyncModel(object):
         except:
             raise
 
+
+
     def IsGoogleDocument(self, f):
         if any(f['mimeType'] in s for s in google_docs_mimelist):
             return True
@@ -590,8 +695,10 @@ class GoSyncModel(object):
         return self.TotalFilesInFolder()
 
     def DownloadFileByObject(self, file_obj, download_path):
-        dfile = self.drive.CreateFile({'id': file_obj['id']})
-        abs_filepath = os.path.join(download_path, file_obj['title'])
+#Migration V3 API
+#        dfile = self.drive.CreateFile({'id': file_obj['id']})
+#        abs_filepath = os.path.join(download_path, file_obj['title'])
+        abs_filepath = os.path.join(download_path, file_obj['name'])
         if os.path.exists(abs_filepath):
             if self.HashOfFile(abs_filepath) == file_obj['md5Checksum']:
                 self.logger.debug('%s file is same as local. not downloading\n' % abs_filepath)
@@ -603,7 +710,17 @@ class GoSyncModel(object):
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
             GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
                                               {'Downloading %s' % fd})
-            dfile.GetContentFile(abs_filepath)
+#Migration V3 API
+#            dfile = self.drive.CreateFile({'id': file_obj['id']})
+#            dfile.GetContentFile(abs_filepath)
+            request = self.drive.files().get_media(fileId=file_obj['id'])
+            fh = io.FileIO(abs_filepath, 'wb')
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()            
+            self.logger.debug('post')
+            fh.close()
             self.updates_done = 1
             self.logger.info('Done\n')
 
@@ -616,7 +733,9 @@ class GoSyncModel(object):
             os.makedirs(os.path.join(self.mirror_directory, pwd))
 
         try:
-            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
+#Migration V3 API
+#            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % parent})
+            file_list = self.MakeFileListQuery("'%s' in parents and trashed=false" % parent)
             for f in file_list:
                 if not self.syncRunning.is_set():
                     self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
@@ -626,23 +745,35 @@ class GoSyncModel(object):
                     if not recursive:
                         continue
 
-                    abs_dirpath = os.path.join(self.mirror_directory, pwd, f['title'])
-                    self.logger.debug("Checking directory %s\n" % f['title'])
+#Migration V3 API
+#                    abs_dirpath = os.path.join(self.mirror_directory, pwd, f['title'])
+                    abs_dirpath = os.path.join(self.mirror_directory, pwd, f['name'])
+#Migration V3 API
+#                    self.logger.debug("Checking directory %s\n" % f['title'])
+                    self.logger.debug("Checking directory %s\n" % f['name'])
                     if not os.path.exists(abs_dirpath):
                         self.logger.debug("creating directory %s " % abs_dirpath)
                         os.makedirs(abs_dirpath)
                         self.logger.debug("done\n")
-                    self.logger.debug('syncing directory %s\n' % f['title'])
-                    self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['title']))
+#Migration V3 API
+#                    self.logger.debug('syncing directory %s\n' % f['title'])
+                    self.logger.debug('syncing directory %s\n' % f['name'])
+#Migration V3 API
+#                    self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['title']))
+                    self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['name']))
                     if not self.syncRunning.is_set():
                         self.logger.debug("SyncRemoteDirectory: Sync has been paused. Aborting.\n")
                         return
                 else:
-                    self.logger.debug("Checking file %s\n" % f['title'])
+#Migration V3 API
+#                    self.logger.debug("Checking file %s\n" % f['title'])
+                    self.logger.debug("Checking file %s\n" % f['name'])
                     if not self.IsGoogleDocument(f):
                         self.DownloadFileByObject(f, os.path.join(self.mirror_directory, pwd))
                     else:
-                        self.logger.info("%s is a google document\n" % f['title'])
+#Migration V3 API
+#                        self.logger.info("%s is a google document\n" % f['title'])
+                        self.logger.info("%s is a google document\n" % f['name'])
         except:
             self.logger.error("Failed to sync directory\n")
             raise
@@ -679,7 +810,9 @@ class GoSyncModel(object):
                 except:
                     if os.path.exists(dirpath) and os.path.isdir(dirpath):
                         self.logger.info("%s folder has been removed from drive. Deleting local copy\n" % dirpath)
-                        os.remove(dirpath)
+#to delete none empty directory recursively
+#                        os.remove(dirpath)
+                        shutil.rmtree(dirpath, ignore_errors=False, onerror=None)
 
 
     def validate_sync_settings(self):
@@ -733,32 +866,43 @@ class GoSyncModel(object):
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
 
             self.sync_lock.release()
+            self.time_left = 600
+#
+#alain to review time to wait
+            self.time_left = 600
+#            self.time_left = 10
 
-            time_left = 600
-
-            while (time_left):
+            while (self.time_left):
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
-                                                  {'Sync starts in %02dm:%02ds' % ((time_left/60), (time_left % 60))})
-                time_left -= 1
+                                                  {'Sync starts in %02dm:%02ds' % ((self.time_left/60), (self.time_left % 60))})
+                self.time_left -= 1
                 self.syncRunning.wait()
                 time.sleep(1)
 
     def GetFileSize(self, f):
         try:
-            size = f['fileSize']
+#Migration V3 API
+#            size = f['fileSize']
+            size = f['size']
             return long(size)
         except:
-            self.logger.error("Failed to get size of file %s (mime: %s)\n" % (f['title'], f['mimeType']))
+#Migration V3 API
+#            self.logger.error("Failed to get size of file %s (mime: %s)\n" % (f['title'], f['mimeType']))
+            self.logger.error("Failed to get size of file %s (mime: %s)\n" % (f['name'], f['mimeType']))
             return 0
 
     def calculateUsageOfFolder(self, folder_id):
         try:
-            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
+#Migration V3 API
+#            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
+            file_list = self.MakeFileListQuery("'%s' in parents and trashed=false" % folder_id)
             for f in file_list:
                 self.fcount += 1
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_UPDATE, self.fcount)
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
-                    self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
+#Migration V3 API
+#                    self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
+                    self.driveTree.AddFolder(folder_id, f['id'], f['name'], f)
                     self.calculateUsageOfFolder(f['id'])
                 else:
                     if not self.IsGoogleDocument(f):
@@ -798,13 +942,12 @@ class GoSyncModel(object):
             try:
                 self.totalFilesToCheck = self.TotalFilesInDrive()
                 self.logger.info("Total files to check %d\n" % self.totalFilesToCheck)
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
-                                                  self.totalFilesToCheck)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED, self.totalFilesToCheck)
                 try:
                     self.calculateUsageOfFolder('root')
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
                     self.drive_usage_dict['Total Files'] = self.totalFilesToCheck
-                    self.drive_usage_dict['Total Size'] = long(self.about_drive['quotaBytesTotal'])
+                    self.drive_usage_dict['Total Size'] = long(self.about_drive['storageQuota']['limit'])
                     self.drive_usage_dict['Audio Size'] = self.driveAudioUsage
                     self.drive_usage_dict['Movies Size'] = self.driveMoviesUsage
                     self.drive_usage_dict['Document Size'] = self.driveDocumentUsage
