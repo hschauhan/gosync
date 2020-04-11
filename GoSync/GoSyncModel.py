@@ -100,6 +100,16 @@ class GoSyncModel(object):
         self.drive_usage_dict = {}
         self.config=None
 
+        self.logger = logging.getLogger(APP_NAME)
+        self.logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
+        fh.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
+
+        self.SendlToLog(3,"Initialize - Started Initialize")
+
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
 #Migration V3 API
@@ -113,6 +123,7 @@ class GoSyncModel(object):
 #            raise ClientSecretsNotFound()
         if not os.path.exists(self.credential_file):
             raise ClientSecretsNotFound()
+        self.SendlToLog(3,"Initialize - Completed Credential Verification")
 
         if not os.path.exists(self.settings_file) or not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
@@ -130,25 +141,31 @@ class GoSyncModel(object):
 #Migration V3 API
 #        self.about_drive = self.authToken.service.about().get().execute()
         self.about_drive = self.drive.about().get(fields='user, storageQuota').execute()
+        self.SendlToLog(3,"Initialize - Completed Drive Quota Execution")
 
 #Migration V3 API
 #        self.about_drive = {'about'}
         self.user_email = self.about_drive['user']['emailAddress']
+        self.SendlToLog(3,"Initialize - Completed Account Information Load")
 
 #create subdir linked to active account
         self.mirror_directory = os.path.join(self.base_mirror_directory, self.user_email)
         if not os.path.exists(self.mirror_directory):
             os.mkdir(self.mirror_directory, 0755)
+        self.SendlToLog(3,"Initialize - Completed mirror_directory validation")
 
         self.tree_pickle_file = os.path.join(self.config_path, 'gtree-' + self.user_email + '.pick')
 
         if not os.path.exists(self.config_file):
             self.CreateDefaultConfigFile()
+            self.SendlToLog(3,"Initialize - Completed Default Config File Creation")
 #todo : add default config logic in method
         try:
             self.LoadConfig()
+
         except:
             raise
+        self.SendlToLog(3,"Initialize - Completed Config File Load")
 
 
 #todo : confirm this is to monitor file changes
@@ -163,17 +180,15 @@ class GoSyncModel(object):
         self.usageCalculateEvent = threading.Event()
         self.usageCalculateEvent.set()
 
-        self.logger = logging.getLogger(APP_NAME)
-        self.logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
-        fh.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        self.logger.addHandler(fh)
         if not os.path.exists(self.tree_pickle_file):
             self.driveTree = GoogleDriveTree()
         else:
-            self.driveTree = pickle.load(open(self.tree_pickle_file, "rb"))
+            try:
+                self.driveTree = pickle.load(open(self.tree_pickle_file, "rb"))
+            except:
+                self.driveTree = GoogleDriveTree()
+        self.SendlToLog(3,"Initialize - Completed GoogleDriveTree File")
+        self.SendlToLog(3,"Initialize - Completed Initialize")
 
 # Sends Log Level Message to Log File
 # Depends on Log_Level constant
