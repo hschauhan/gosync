@@ -112,18 +112,22 @@ class GoSyncModel(object):
 
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0755)
-#Migration V3 API
-#            raise ClientSecretsNotFound()
 
         if not os.path.exists(self.base_mirror_directory):
             os.mkdir(self.base_mirror_directory, 0755)
 
-#Migration V3 API
-#        if not os.path.exists(self.client_secret_file):
-#            raise ClientSecretsNotFound()
         if not os.path.exists(self.credential_file):
-            raise ClientSecretsNotFound()
-        self.SendlToLog(3,"Initialize - Completed Credential Verification")
+        #check if Credentials.json file exists
+            self.SendlToLog(3,"Initialize - Missing Credentials File")
+            if (self.AskChooseCredentialsFile()):
+                self.SendlToLog(3,"Initialize - Ask Location of Credentials File")    
+                if (self.getCredentialFile() == False) :
+                    self.SendlToLog(1,"Initialize - Failled to load Credentials File")    
+                    raise ClientSecretsNotFound()
+            else:
+                self.SendlToLog(3,"Initialize - Declined to Locate Credentials File")    
+                raise ClientSecretsNotFound()
+        self.SendlToLog(2,"Initialize - Completed Credentials Verification")
 
         if not os.path.exists(self.settings_file) or not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
@@ -138,13 +142,9 @@ class GoSyncModel(object):
 
         self.observer = Observer()
         self.DoAuthenticate()
-#Migration V3 API
-#        self.about_drive = self.authToken.service.about().get().execute()
         self.about_drive = self.drive.about().get(fields='user, storageQuota').execute()
         self.SendlToLog(3,"Initialize - Completed Drive Quota Execution")
 
-#Migration V3 API
-#        self.about_drive = {'about'}
         self.user_email = self.about_drive['user']['emailAddress']
         self.SendlToLog(3,"Initialize - Completed Account Information Load")
 
@@ -259,9 +259,36 @@ class GoSyncModel(object):
         json.dump(self.account_dict, f)
         f.close()
 
+    def AskChooseCredentialsFile(self):
+        dial = wx.MessageDialog(None, 'No Credentials file was found!\n\nDo you want to load one?\n',
+                                'Error', wx.YES_NO | wx.ICON_EXCLAMATION)
+        res = dial.ShowModal()
+        if res == wx.ID_YES:
+            return True
+        else:
+            return false
+
+
+    def getCredentialFile(self):
+        # ask for the Credential file and save it in Config directory then return True
+        defDir, defFile = '', ''
+        dlg = wx.FileDialog(None,
+               'Load Credential File',
+                 '~', 'Credentials.json',
+                 'json files (*.json)|*.json',
+                 wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
+        if dlg.ShowModal() == wx.ID_CANCEL:
+            return False
+        try:
+            print(dlg.GetPath())
+            print(self.credential_file)
+            shutil.copy(dlg.GetPath(), self.credential_file)
+            return True
+        except:
+            return False
+
     def DoAuthenticate(self):
         try:
-#Migration V3 API
             # If modifying these scopes, delete the file token.pickle.
             SCOPES = ['https://www.googleapis.com/auth/drive']
             creds = None
@@ -283,10 +310,6 @@ class GoSyncModel(object):
                     pickle.dump(creds, token)
 
             service = build('drive', 'v3', credentials=creds)
-#Migration V3 API
-#            self.authToken = GoogleAuth(self.settings_file)
-#            self.authToken.LocalWebserverAuth()
-#            self.drive = GoogleDrive(self.authToken)
             self.drive = service
             self.is_logged_in = True
             return service

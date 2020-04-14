@@ -88,7 +88,7 @@ class GoSyncController(wx.Frame):
         try:
             self.sync_model = GoSyncModel()
         except ClientSecretsNotFound:
-            dial = wx.MessageDialog(None, 'Client secret file was not found!\n\nDo you want to know how to create one?\n',
+            dial = wx.MessageDialog(None, 'Credentials file was not found!\n\nDo you want to know how to create one?\n',
                                     'Error', wx.YES_NO | wx.ICON_EXCLAMATION)
             res = dial.ShowModal()
 
