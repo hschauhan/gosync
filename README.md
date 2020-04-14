@@ -28,7 +28,12 @@ Starting from version 0.3, GoSync is available for installation via pip (includi
 
 pip install GoSync
 
-If you want to install the latest source from GitHub, please use the following procedure :
+If you want to: 
+
+1. install the latest source from GitHub
+1. enable Google Drive API
+
+please use the following procedure :
 
 https://github.com/arentoine/gosync/wiki
 
