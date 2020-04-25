@@ -22,45 +22,23 @@ There are some limitations as of now:
 
 This will be fixed in future versions.
 
-What you need to make it work?
-------------------------------
-Starting from version 0.3, GoSync is available for installation via pip. Simply run:
+Installation
+------------
+Starting from version 0.3, GoSync is available for installation via pip (including all dependencies). Simply run:
 
 pip install GoSync
 
-This will also install the dependencies.
+If you want to: 
 
-If you have cloned the source from GitHub, the dependencies should be installed manually.
-You need to install the following libraries before using GoSync:
+1. install the latest source from GitHub
+1. enable Google Drive API
 
-1. python (version >= 2.7. Version 3 not tested yet)
-2. wxPython  (version >= 2.8)
-3. python-googleapi
-4. pip
-5. watchdog (to be installed from pip)
-6. PyDrive (to be installed from pip)
+please use the following procedure :
 
-There is one more essential thing. The "client_secrets.json" file. I am not distributing
-my "client_secrets.json" because I am not distributing GoSync commercially.
+https://github.com/arentoine/gosync/wiki
 
-A very good get started page can be found at (https://developers.google.com/drive/web/quickstart/python)
-and a step-by-step process at (https://github.com/jay0lee/GAM/wiki/CreatingClientSecretsFile).
-
-When you are done creating the client_secrets.json file, download it and keep it inside
-.gosync directory in your home directory.
-
-In case you have some problem you can send me mail at hschauhan at nulltrace dot org or
-hs dot chauhan at gmail dot com.
-
-Where to get the code?
-----------------------
-The code is being maintained as a github project. You can either clone the project from github or you
-can download the zip file. The following is the github page for GoSync:
-
-https://github.com/hschauhan/gosync
-
-A Request
----------
+Requests
+--------
 Please help in improving this project. You can send me patches at hschauhan at nulltrace dot org. If you
 can't write the code and you find something more or something non-functional, please create a bug on github
 page. I will see if I can fix that as soon as possible. Since I work on this project in my free time, I

@@ -33,7 +33,7 @@ setup(
         'GoSync':['resources/*.png'],
     },
 
-    install_requires=['google-api-python-client', 'pydrive', 'watchdog'],
+    install_requires=['google-api-python-client', 'google-auth-httplib2', 'google-auth-oauthlib', 'watchdog'],
     entry_points={
         'console_scripts':[
             'GoSync=GoSync.GoSync:main',

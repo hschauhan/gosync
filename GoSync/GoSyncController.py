@@ -28,7 +28,7 @@ from GoSyncSettingsPage import SettingsPage
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()
 
-mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX)
+mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX) ^ (wx.RESIZE_BORDER)
 HERE=os.path.abspath(os.path.dirname(__file__))
 
 class PageAccount(wx.Panel):
@@ -41,7 +41,6 @@ class PageAccount(wx.Panel):
 
         aboutdrive = sync_model.DriveInfo()
         self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['storageQuota']['limit']), -1)
-#        self.driveUsageBar = DriveUsageBox(self, long(15), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
         self.driveUsageBar.SetDocumentUsage(0)
@@ -89,7 +88,7 @@ class GoSyncController(wx.Frame):
         try:
             self.sync_model = GoSyncModel()
         except ClientSecretsNotFound:
-            dial = wx.MessageDialog(None, 'Client secret file was not found!\n\nDo you want to know how to create one?\n',
+            dial = wx.MessageDialog(None, 'Credentials file was not found!\n\nDo you want to know how to create one?\n',
                                     'Error', wx.YES_NO | wx.ICON_EXCLAMATION)
             res = dial.ShowModal()
 
@@ -104,18 +103,14 @@ class GoSyncController(wx.Frame):
             sys.exit(1)
 
         self.aboutdrive = self.sync_model.DriveInfo()
+        self.Bind(wx.EVT_CLOSE, self.OnExit)
 
-#alain
-#        title_string = "GoSync --%s (%s used of %s)" % (self.aboutdrive['name'],
-        title_string = "GoSync --%s (%s used of %s)" % ('Drive de Test',
+        title_string = "GoSync - %s (%s used of %s)" % (self.aboutdrive['user']['displayName'],
 
-#alain
+
 self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])),
-#self.FileSizeHumanize(long(0)),
 
-#alain
 self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
-#self.FileSizeHumanize(long(15)))
         self.SetTitle(title_string)
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
