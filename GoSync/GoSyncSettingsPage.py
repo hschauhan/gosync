@@ -50,7 +50,8 @@ class SettingsPage(wx.Panel):
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
                                           self.RefreshTree)
-        wx.EVT_CHECKBOX(self, self.cb.GetId(), self.SyncSetting)
+#        wx.EVT_CHECKBOX(self, self.cb.GetId(), self.SyncSetting)
+        self.cb.Bind(wx.EVT_CHECKBOX, self.SyncSetting)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(t1, 0, wx.ALL)

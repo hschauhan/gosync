@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import wx, os, time
+import wx, wx.adv, os, time
 import sys, os, wx, ntpath, defines, threading, math, webbrowser
 from GoSyncModel import GoSyncModel, ClientSecretsNotFound
 from defines import *
@@ -40,7 +40,7 @@ class PageAccount(wx.Panel):
         self.time_left=0
 
         aboutdrive = sync_model.DriveInfo()
-        self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['storageQuota']['limit']), -1)
+        self.driveUsageBar = DriveUsageBox(self, int(aboutdrive['storageQuota']['limit']), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
         self.driveUsageBar.SetDocumentUsage(0)
@@ -108,9 +108,9 @@ class GoSyncController(wx.Frame):
         title_string = "GoSync - %s (%s used of %s)" % (self.aboutdrive['user']['displayName'],
 
 
-self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])),
+        self.FileSizeHumanize(int(self.aboutdrive['storageQuota']['usageInDrive'])),
 
-self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
+        self.FileSizeHumanize(int(self.aboutdrive['storageQuota']['limit'])))
         self.SetTitle(title_string)
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
@@ -120,7 +120,7 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         menu_txt = 'Pause/Resume Sync'
 
         self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
-        self.CreateMenuItem(menu, 'Synch Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
+        self.SyncNowMenuItem = self.CreateMenuItem(menu, 'Synch Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
 
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
@@ -129,6 +129,7 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         menuBar.Append(menu, '&File')
 
         self.SetMenuBar(menuBar)
+        self.SyncNowMenuItem.Enable(False)
 
         # Here we create a panel and a notebook on the panel
         p = wx.Panel(self, size=self.GetSize())
@@ -205,7 +206,8 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         else:
             self.Bind(wx.EVT_MENU, func, id=item.GetId())
 
-        menu.AppendItem(item)
+#        menu.AppendItem(item)
+        menu.Append(item)
         return item
 
     def FileSizeHumanize(self, size):
@@ -230,16 +232,18 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         if self.sync_model.IsSyncEnabled():
             self.sync_model.StopSync()
             self.sb.SetStatusText("Paused", 1)
+            self.SyncNowMenuItem.Enable(False)
         else:
             self.sync_model.StartSync()
             self.sb.SetStatusText("Running", 1)
+            self.SyncNowMenuItem.Enable(True)
 
     def OnSyncNow(self, evt):
         self.sync_model.time_left=1
 
     def OnAbout(self, evt):
         """About GoSync"""
-        about = wx.AboutDialogInfo()
+        about = wx.adv.AboutDialogInfo()
         about.SetIcon(wx.Icon(ABOUT_ICON, wx.BITMAP_TYPE_PNG))
         about.SetName(APP_NAME)
         about.SetVersion(APP_VERSION)
@@ -249,4 +253,4 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         about.SetLicense(APP_LICENSE)
         about.AddDeveloper(APP_DEVELOPER)
         about.AddArtist(APP_DEVELOPER)
-        wx.AboutBox(about)
+        wx.adv.AboutBox(about)
