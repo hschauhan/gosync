@@ -18,12 +18,19 @@
 
 import wx, wx.adv, os, time
 import sys, os, wx, ntpath, threading, math, webbrowser
-from .GoSyncModel import GoSyncModel, ClientSecretsNotFound
-from GoSync.defines import *
 from threading import Timer
-from .DriveUsageBox import DriveUsageBox
-from .GoSyncEvents import *
-from .GoSyncSettingsPage import SettingsPage
+try :
+    from .DriveUsageBox import DriveUsageBox
+    from .GoSyncEvents import *
+    from .GoSyncSettingsPage import SettingsPage
+    from .GoSyncModel import GoSyncModel, ClientSecretsNotFound
+    from .defines import *
+except ImportError:
+    from DriveUsageBox import DriveUsageBox
+    from GoSyncEvents import *
+    from GoSyncSettingsPage import SettingsPage
+    from GoSyncModel import GoSyncModel, ClientSecretsNotFound
+    from defines import *
 
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()

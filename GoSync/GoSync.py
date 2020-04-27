@@ -19,9 +19,15 @@
 
 import sys, os, wx
 from os.path import expanduser, dirname, relpath
-from .GoSyncController import GoSyncController
-from .GoSyncModel import *
-from GoSync.defines import *
+try :
+    from .GoSyncController import GoSyncController
+    from .GoSyncModel import *
+    from .defines import *
+except ImportError:
+    from GoSyncController import GoSyncController
+    from GoSyncModel import *
+    from defines import *
+
 
 # Add the current path to gosync path.
 sys.path.insert(0, APP_PATH)

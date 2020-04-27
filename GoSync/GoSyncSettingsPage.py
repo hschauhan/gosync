@@ -2,7 +2,10 @@ import wx
 import wx.lib.agw.customtreectrl as CT
 #from pydrive.drive import GoogleDrive
 #from pydrive.auth import GoogleAuth
-from .GoSyncEvents import *
+try :
+    from .GoSyncEvents import *
+except ImportError:
+    from GoSyncEvents import *
 
 class GoSyncDriveTree(CT.CustomTreeCtrl):
     def __init__(self, parent, *args, **kw):

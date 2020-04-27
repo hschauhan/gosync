@@ -29,13 +29,19 @@ from apiclient import errors
 from apiclient.http import MediaFileUpload
 from apiclient.http import MediaIoBaseDownload
 import logging
-from GoSync.defines import *
-from .GoSyncEvents import *
-from .GoSyncDriveTree import GoogleDriveTree
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import json, pickle
+try:
+    from .defines import *
+    from .GoSyncEvents import *
+    from .GoSyncDriveTree import GoogleDriveTree
+except ImportError:
+    from defines import *
+    from GoSyncEvents import *
+    from GoSyncDriveTree import GoogleDriveTree
+
 
 class ClientSecretsNotFound(RuntimeError):
     """Client secrets file was not found"""
