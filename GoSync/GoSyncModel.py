@@ -16,7 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-import sys, os, wx, ntpath, defines, threading, hashlib, time, copy, io
+import sys, os, wx, ntpath, threading, hashlib, time, copy, io
 import shutil
 #from pydrive.auth import GoogleAuth
 #from pydrive.drive import GoogleDrive
@@ -29,9 +29,9 @@ from apiclient import errors
 from apiclient.http import MediaFileUpload
 from apiclient.http import MediaIoBaseDownload
 import logging
-from defines import *
-from GoSyncEvents import *
-from GoSyncDriveTree import GoogleDriveTree
+from GoSync.defines import *
+from .GoSyncEvents import *
+from .GoSyncDriveTree import GoogleDriveTree
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request

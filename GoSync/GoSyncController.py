@@ -17,13 +17,13 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import wx, wx.adv, os, time
-import sys, os, wx, ntpath, defines, threading, math, webbrowser
-from GoSyncModel import GoSyncModel, ClientSecretsNotFound
-from defines import *
+import sys, os, wx, ntpath, threading, math, webbrowser
+from .GoSyncModel import GoSyncModel, ClientSecretsNotFound
+from GoSync.defines import *
 from threading import Timer
-from DriveUsageBox import DriveUsageBox
-from GoSyncEvents import *
-from GoSyncSettingsPage import SettingsPage
+from .DriveUsageBox import DriveUsageBox
+from .GoSyncEvents import *
+from .GoSyncSettingsPage import SettingsPage
 
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()
