@@ -16,8 +16,10 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-import sys, os, wx, ntpath, threading, hashlib, time, copy, io
+import sys, os, wx, ntpath, defines, threading, hashlib, time, copy, io
 import shutil
+if sys.version_info > (3,):
+    long = int
 #from pydrive.auth import GoogleAuth
 #from pydrive.drive import GoogleDrive
 from os.path import expanduser
@@ -33,15 +35,14 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import json, pickle
-try:
-    from .defines import *
-    from .GoSyncEvents import *
-    from .GoSyncDriveTree import GoogleDriveTree
-except ImportError:
-    from defines import *
-    from GoSyncEvents import *
-    from GoSyncDriveTree import GoogleDriveTree
-
+try :
+	from .GoSyncDriveTree import GoogleDriveTree
+	from .defines import *
+	from .GoSyncEvents import *
+except (ImportError, ValueError):
+	from GoSyncDriveTree import GoogleDriveTree
+	from defines import *
+	from GoSyncEvents import *
 
 class ClientSecretsNotFound(RuntimeError):
     """Client secrets file was not found"""
@@ -142,7 +143,6 @@ class GoSyncModel(object):
             sfile.write("save_credentials_file: ")
             sfile.write(self.credential_file)
             sfile.write("\n")
-#            sfile.write('client_config_file: ' + self.client_secret_file + "\n")
             sfile.write("save_credentials_backend: file\n")
             sfile.close()
 
@@ -440,10 +440,7 @@ class GoSyncModel(object):
                                                          fileId=file_object['id'],
                                                          fields='id, appProperties').execute()
             return updated_file
-        except errors.HttpError:
-            self.SendlToLog(1,'An error occurred while renaming file: %s' % error)
-            return None
-        except error:
+        except errors.HttpError as error:
             self.SendlToLog(1,'An error occurred while renaming file: %s' % error)
             return None
         except:
@@ -470,10 +467,7 @@ class GoSyncModel(object):
             file_metadata = {'trashed':True}
             self.drive.files().update(body=file_metadata,fileId=file_object['id']).execute()
             self.SendlToLog(2,{"TRASH_FILE: File %s deleted successfully.\n" % file_object['name']})
-        except errors.HttpError:
-            self.SendlToLog(1,"TRASH_FILE: HTTP Error\n")
-            raise RegularFileTrashFailed()
-        except error:
+        except errors.HttpError as error:
             self.SendlToLog(1,"TRASH_FILE: HTTP Error\n")
             raise RegularFileTrashFailed()
 
@@ -907,8 +901,10 @@ class GoSyncModel(object):
     def GetFileSize(self, f):
         try:
             size = f['size']
-            return int(size)
+            return long(size)
         except:
+#Migration V3 API
+#            self.SendlToLog(1,"Failed to get size of file %s (mime: %s)\n" % (f['title'], f['mimeType']))
             self.SendlToLog(1,"Failed to get size of file %s (mime: %s)\n" % (f['name'], f['mimeType']))
             return 0
 
@@ -966,7 +962,7 @@ class GoSyncModel(object):
                     self.calculateUsageOfFolder('root')
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
                     self.drive_usage_dict['Total Files'] = self.totalFilesToCheck
-                    self.drive_usage_dict['Total Size'] = int(self.about_drive['storageQuota']['limit'])
+                    self.drive_usage_dict['Total Size'] = long(self.about_drive['storageQuota']['limit'])
                     self.drive_usage_dict['Audio Size'] = self.driveAudioUsage
                     self.drive_usage_dict['Movies Size'] = self.driveMoviesUsage
                     self.drive_usage_dict['Document Size'] = self.driveDocumentUsage

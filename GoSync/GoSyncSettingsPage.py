@@ -4,7 +4,7 @@ import wx.lib.agw.customtreectrl as CT
 #from pydrive.auth import GoogleAuth
 try :
     from .GoSyncEvents import *
-except ImportError:
+except (ImportError, ValueError):
     from GoSyncEvents import *
 
 class GoSyncDriveTree(CT.CustomTreeCtrl):
@@ -53,7 +53,7 @@ class SettingsPage(wx.Panel):
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
                                           self.RefreshTree)
-#        wx.EVT_CHECKBOX(self, self.cb.GetId(), self.SyncSetting)
+        #wx.EVT_CHECKBOX(self, self.cb.GetId(), self.SyncSetting)
         self.cb.Bind(wx.EVT_CHECKBOX, self.SyncSetting)
 
         sizer = wx.BoxSizer(wx.VERTICAL)

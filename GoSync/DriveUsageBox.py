@@ -17,6 +17,10 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import wx, math
+import sys
+if sys.version_info > (3,):
+    long = int
+
 
 class DriveUsageBox(wx.Panel):
     def __init__(self, parent, drive_size_bytes, id=wx.ID_ANY):
@@ -128,7 +132,7 @@ class DriveUsageBox(wx.Panel):
             return "0B"
         units = [' B',' KB',' MB',' GB',' TB',' PB',' EB',' ZB',' YB']
         p = math.floor(math.log(size, 2)/10)
-        return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
+        return "%.3f%s" % (size/math.pow(1024,p),units[long(p)])
 
     def SetStatusMessage(self, msg):
         self.t1.SetLabel(msg)

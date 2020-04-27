@@ -16,21 +16,29 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import wx, wx.adv, os, time
-import sys, os, wx, ntpath, threading, math, webbrowser
+import wx, os, time
+import sys
+if sys.version_info > (3,):
+    long = int
+try :
+	import wx.adv
+	wxgtk4 = True
+except (ImportError, ValueError):
+	wxgtk4 = False
+import sys, os, wx, ntpath, defines, threading, math, webbrowser
 from threading import Timer
 try :
-    from .DriveUsageBox import DriveUsageBox
-    from .GoSyncEvents import *
-    from .GoSyncSettingsPage import SettingsPage
-    from .GoSyncModel import GoSyncModel, ClientSecretsNotFound
-    from .defines import *
-except ImportError:
-    from DriveUsageBox import DriveUsageBox
-    from GoSyncEvents import *
-    from GoSyncSettingsPage import SettingsPage
-    from GoSyncModel import GoSyncModel, ClientSecretsNotFound
-    from defines import *
+	from .GoSyncModel import GoSyncModel, ClientSecretsNotFound
+	from .defines import *
+	from .DriveUsageBox import DriveUsageBox
+	from .GoSyncEvents import *
+	from .GoSyncSettingsPage import SettingsPage
+except (ImportError, ValueError):
+	from GoSyncModel import GoSyncModel, ClientSecretsNotFound
+	from defines import *
+	from DriveUsageBox import DriveUsageBox
+	from GoSyncEvents import *
+	from GoSyncSettingsPage import SettingsPage
 
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()
@@ -47,7 +55,7 @@ class PageAccount(wx.Panel):
         self.time_left=0
 
         aboutdrive = sync_model.DriveInfo()
-        self.driveUsageBar = DriveUsageBox(self, int(aboutdrive['storageQuota']['limit']), -1)
+        self.driveUsageBar = DriveUsageBox(self, long(aboutdrive['storageQuota']['limit']), -1)
         self.driveUsageBar.SetStatusMessage("Calculating your categorical Google Drive usage. Please wait.")
         self.driveUsageBar.SetMoviesUsage(0)
         self.driveUsageBar.SetDocumentUsage(0)
@@ -115,9 +123,9 @@ class GoSyncController(wx.Frame):
         title_string = "GoSync - %s (%s used of %s)" % (self.aboutdrive['user']['displayName'],
 
 
-        self.FileSizeHumanize(int(self.aboutdrive['storageQuota']['usageInDrive'])),
+	    self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])),
 
-        self.FileSizeHumanize(int(self.aboutdrive['storageQuota']['limit'])))
+	    self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         self.SetTitle(title_string)
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
@@ -127,7 +135,7 @@ class GoSyncController(wx.Frame):
         menu_txt = 'Pause/Resume Sync'
 
         self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
-        self.SyncNowMenuItem = self.CreateMenuItem(menu, 'Synch Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
+        self.CreateMenuItem(menu, 'Synch Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
 
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
@@ -136,7 +144,6 @@ class GoSyncController(wx.Frame):
         menuBar.Append(menu, '&File')
 
         self.SetMenuBar(menuBar)
-        self.SyncNowMenuItem.Enable(False)
 
         # Here we create a panel and a notebook on the panel
         p = wx.Panel(self, size=self.GetSize())
@@ -213,8 +220,10 @@ class GoSyncController(wx.Frame):
         else:
             self.Bind(wx.EVT_MENU, func, id=item.GetId())
 
-#        menu.AppendItem(item)
-        menu.Append(item)
+        if wxgtk4 :
+            menu.Append(item)
+        else:
+            menu.AppendItem(item)
         return item
 
     def FileSizeHumanize(self, size):
@@ -223,7 +232,7 @@ class GoSyncController(wx.Frame):
             return "0B"
         units = ['B','KB','MB','GB','TB','PB','EB','ZB','YB']
         p = math.floor(math.log(size, 2)/10)
-        return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
+        return "%.3f%s" % (size/math.pow(1024,p),units[long(p)])
 
     def OnExit(self, event):
         dial = wx.MessageDialog(None, 'GoSync will stop syncing files until restarted.\nAre you sure to quit?\n',
@@ -239,18 +248,19 @@ class GoSyncController(wx.Frame):
         if self.sync_model.IsSyncEnabled():
             self.sync_model.StopSync()
             self.sb.SetStatusText("Paused", 1)
-            self.SyncNowMenuItem.Enable(False)
         else:
             self.sync_model.StartSync()
             self.sb.SetStatusText("Running", 1)
-            self.SyncNowMenuItem.Enable(True)
 
     def OnSyncNow(self, evt):
         self.sync_model.time_left=1
 
     def OnAbout(self, evt):
         """About GoSync"""
-        about = wx.adv.AboutDialogInfo()
+        if wxgtk4 :
+            about = wx.adv.AboutDialogInfo()
+        else:
+            about = wx.AboutDialogInfo()
         about.SetIcon(wx.Icon(ABOUT_ICON, wx.BITMAP_TYPE_PNG))
         about.SetName(APP_NAME)
         about.SetVersion(APP_VERSION)
@@ -260,4 +270,7 @@ class GoSyncController(wx.Frame):
         about.SetLicense(APP_LICENSE)
         about.AddDeveloper(APP_DEVELOPER)
         about.AddArtist(APP_DEVELOPER)
-        wx.adv.AboutBox(about)
+        if wxgtk4 :
+            wx.adv.AboutBox(about)
+        else:
+            wx.AboutBox(about)
