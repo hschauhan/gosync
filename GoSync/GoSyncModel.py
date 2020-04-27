@@ -16,7 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-import sys, os, wx, ntpath, defines, threading, hashlib, time, copy, io
+import sys, os, wx, ntpath, threading, hashlib, time, copy, io
 import shutil
 if sys.version_info > (3,):
     long = int

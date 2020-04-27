@@ -25,7 +25,7 @@ try :
 	wxgtk4 = True
 except (ImportError, ValueError):
 	wxgtk4 = False
-import sys, os, wx, ntpath, defines, threading, math, webbrowser
+import sys, os, wx, ntpath, threading, math, webbrowser
 from threading import Timer
 try :
 	from .GoSyncModel import GoSyncModel, ClientSecretsNotFound
