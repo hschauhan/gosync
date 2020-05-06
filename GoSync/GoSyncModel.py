@@ -16,8 +16,10 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-import sys, os, wx, ntpath, defines, threading, hashlib, time, copy, io
+import sys, os, wx, ntpath, threading, hashlib, time, copy, io
 import shutil
+if sys.version_info > (3,):
+    long = int
 #from pydrive.auth import GoogleAuth
 #from pydrive.drive import GoogleDrive
 from os.path import expanduser
@@ -29,13 +31,18 @@ from apiclient import errors
 from apiclient.http import MediaFileUpload
 from apiclient.http import MediaIoBaseDownload
 import logging
-from defines import *
-from GoSyncEvents import *
-from GoSyncDriveTree import GoogleDriveTree
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 import json, pickle
+try :
+	from .GoSyncDriveTree import GoogleDriveTree
+	from .defines import *
+	from .GoSyncEvents import *
+except (ImportError, ValueError):
+	from GoSyncDriveTree import GoogleDriveTree
+	from defines import *
+	from GoSyncEvents import *
 
 class ClientSecretsNotFound(RuntimeError):
     """Client secrets file was not found"""
@@ -111,10 +118,10 @@ class GoSyncModel(object):
         self.SendlToLog(3,"Initialize - Started Initialize")
 
         if not os.path.exists(self.config_path):
-            os.mkdir(self.config_path, 0755)
+            os.mkdir(self.config_path, 0o0755)
 
         if not os.path.exists(self.base_mirror_directory):
-            os.mkdir(self.base_mirror_directory, 0755)
+            os.mkdir(self.base_mirror_directory, 0o0755)
 
         if not os.path.exists(self.credential_file):
         #check if Credentials.json file exists
@@ -136,7 +143,6 @@ class GoSyncModel(object):
             sfile.write("save_credentials_file: ")
             sfile.write(self.credential_file)
             sfile.write("\n")
-#            sfile.write('client_config_file: ' + self.client_secret_file + "\n")
             sfile.write("save_credentials_backend: file\n")
             sfile.close()
 
@@ -151,7 +157,7 @@ class GoSyncModel(object):
 #create subdir linked to active account
         self.mirror_directory = os.path.join(self.base_mirror_directory, self.user_email)
         if not os.path.exists(self.mirror_directory):
-            os.mkdir(self.mirror_directory, 0755)
+            os.mkdir(self.mirror_directory, 0o0755)
         self.SendlToLog(3,"Initialize - Completed mirror_directory validation")
 
         self.tree_pickle_file = os.path.join(self.config_path, 'gtree-' + self.user_email + '.pick')
@@ -210,7 +216,7 @@ class GoSyncModel(object):
         return self.is_logged_in
 
     def HashOfFile(self, abs_filepath):
-        data = open(abs_filepath, "r").read()
+        data = open(abs_filepath, "rb").read()
         return hashlib.md5(data).hexdigest()
 
     def CreateDefaultConfigFile(self):
@@ -336,21 +342,10 @@ class GoSyncModel(object):
 
 
     def CreateDirectoryInParent(self, dirname, parent_id='root'):
-#Migration V3 API
-#        upfile = self.drive.CreateFile({'title': dirname,
-#        upfile = self.drive.CreateFile({'name': dirname,
-#                                        'mimeType': "application/vnd.google-apps.folder",
-#                                        "parents": [{"kind": "drive#fileLink", "id": parent_id}]})
-#        upfile.Upload()
         file_metadata = {'name': dirname,
                         'mimeType':'application/vnd.google-apps.folder'}
         file_metadata['parents'] = [parent_id]
         upfile = self.drive.files().create(body=file_metadata, fields='id').execute()
-#Migration V3 API
-#        upfile = self.drive.files().create(body=file_metadata).execute()
-#remove
-#        print 'CreateDirectoryInParent, Name : %s' % dirname
-#        print 'CreateDirectoryInParent, Returned File ID: %s' % upfile.get('id')
 
     def CreateDirectoryByPath(self, dirpath):
         self.SendlToLog(3,"create directory: %s\n" % dirpath)
@@ -386,22 +381,12 @@ class GoSyncModel(object):
     def CreateRegularFile(self, file_path, parent='root', uploaded=False):
         self.SendlToLog(3,"Create file %s\n" % file_path)
         filename = self.PathLeaf(file_path)
-#Migration V3 API
-#        upfile = self.drive.CreateFile({'title': filename,
         file_metadata = {'name': filename}
         file_metadata['parents'] = [parent]
-#Migration V3 API
-#        media = MediaFileUpload('/home/robillal/Google Drive/testgosynch@gmail.com/GoSync.log', resumable=True)
         media = MediaFileUpload(file_path, resumable=True)
         upfile = self.drive.files().create(body=file_metadata,
                                     media_body=media,
                                     fields='id').execute()
-#remove
-#        print 'File ID: %s' % upfile.get('id')
-#Migration V3 API
-#        upfile = self.drive.CreateFile()
-#        upfile.SetContentFile(file_path)
-#        upfile.Upload()
 
     def UploadFile(self, file_path):
         if os.path.isfile(file_path):
@@ -409,8 +394,6 @@ class GoSyncModel(object):
             self.SendlToLog(3,"file: %s drivepath is %s\n" % (file_path, drivepath))
             try:
                 f = self.LocateFileOnDrive(drivepath)
-#Migration V3 API
-#                self.SendlToLog(3,'Found file %s on remote (dpath: %s)\n' % (f['title'], drivepath))
                 self.SendlToLog(3,'Found file %s on remote (dpath: %s)\n' % (f['name'], drivepath))
                 newfile = False
                 self.SendlToLog(3,'Checking if they are same... ')
@@ -451,19 +434,13 @@ class GoSyncModel(object):
 
     def RenameFile(self, file_object, new_title):
         try:
-#Migration V3 API
-#            file = {'title': new_title}
             file = {'name': new_title}
 
-#Migration V3 API
-#            updated_file = self.authToken.service.files().patch(fileId=file_object['id'],
-#                                                                body=file, fields='title').execute()
-#                                                                body=file, fields='name').execute()
             updated_file = self.drive.files().update( body= file,
                                                          fileId=file_object['id'],
                                                          fields='id, appProperties').execute()
             return updated_file
-        except errors.HttpError, error:
+        except errors.HttpError as error:
             self.SendlToLog(1,'An error occurred while renaming file: %s' % error)
             return None
         except:
@@ -488,13 +465,9 @@ class GoSyncModel(object):
     def TrashFile(self, file_object):
         try:
             file_metadata = {'trashed':True}
-#Migration V3 API
-#            self.authToken.service.files().trash(fileId=file_object['id']).execute()
             self.drive.files().update(body=file_metadata,fileId=file_object['id']).execute()
-#Migration V3 API
-#            self.logger.info({"TRASH_FILE: File %s deleted successfully.\n" % file_object['title']})
             self.SendlToLog(2,{"TRASH_FILE: File %s deleted successfully.\n" % file_object['name']})
-        except errors.HttpError, error:
+        except errors.HttpError as error:
             self.SendlToLog(1,"TRASH_FILE: HTTP Error\n")
             raise RegularFileTrashFailed()
 
@@ -529,11 +502,6 @@ class GoSyncModel(object):
             else:
                 sid = 'root'
 
-#Migration V3 API
-#            updated_file = self.authToken.service.files().patch(fileId=src_file['id'],
-#                                                                body=src_file,
-#                                                                addParents=did,
-#                                                                removeParents=sid).execute()
             updated_file = self.drive.files().update(fileId=src_file['id'],
                                     addParents=did,
                                     removeParents=sid,
@@ -543,13 +511,13 @@ class GoSyncModel(object):
             self.logger.exception("move failed\n")
 
     def MoveObservedFile(self, src_path, dest_path):
-	from_drive_path = src_path.split(self.mirror_directory+'/')[1]
-	to_drive_path = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
+        from_drive_path = src_path.split(self.mirror_directory+'/')[1]
+        to_drive_path = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
 
         self.SendlToLog(3,"Moving file %s to %s\n" % (from_drive_path, to_drive_path))
 
-	try:
-	    ftm = self.LocateFileOnDrive(from_drive_path)
+        try:
+            ftm = self.LocateFileOnDrive(from_drive_path)
             self.SendlToLog(3,"MoveObservedFile: Found source file on drive\n")
             if os.path.dirname(from_drive_path) == '':
                 sf = 'root'
@@ -578,29 +546,29 @@ class GoSyncModel(object):
             except:
                 self.SendlToLog(1,"MoveObservedFile: Unknown error while locating destination folder on drive.\n")
                 return
-	except FileNotFound:
-            self.SendlToLog(1,"MoveObservedFile: Couldn't locate file on drive.\n")
+        except FileNotFound:
+                self.SendlToLog(1,"MoveObservedFile: Couldn't locate file on drive.\n")
+                return
+        except FileListQueryFailed:
+            self.SendlToLog(1,"MoveObservedFile: File Query failed. aborting.\n")
             return
-	except FileListQueryFailed:
-	    self.SendlToLog(1,"MoveObservedFile: File Query failed. aborting.\n")
-	    return
-	except FolderNotFound:
-	    self.SendlToLog(1,"MoveObservedFile: Folder not found\n")
-	    return
-	except:
-	    self.SendlToLog(1,"MoveObservedFile: Unknown error while moving file.\n")
-	    return
+        except FolderNotFound:
+            self.SendlToLog(1,"MoveObservedFile: Folder not found\n")
+            return
+        except:
+            self.SendlToLog(1,"MoveObservedFile: Unknown error while moving file.\n")
+            return
 
     def HandleMovedFile(self, src_path, dest_path):
         drive_path1 = os.path.dirname(src_path.split(self.mirror_directory+'/')[1])
-	drive_path2 = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
+        drive_path2 = os.path.dirname(dest_path.split(self.mirror_directory+'/')[1])
 
-	if drive_path1 == drive_path2:
+        if drive_path1 == drive_path2:
             self.SendlToLog(3,"Rename file\n")
-	    self.RenameObservedFile(src_path, self.PathLeaf(dest_path))
-	else:
+            self.RenameObservedFile(src_path, self.PathLeaf(dest_path))
+        else:
             self.SendlToLog(3,"Move file\n")
-	    self.MoveObservedFile(src_path, dest_path)
+            self.MoveObservedFile(src_path, dest_path)
 
     #################################################
     ####### DOWNLOAD SECTION (Syncing local) #######
@@ -943,15 +911,11 @@ class GoSyncModel(object):
 #### calculateUsageOfFolder
     def calculateUsageOfFolder(self, folder_id):
         try:
-#Migration V3 API
-#            file_list = self.MakeFileListQuery({'q': "'%s' in parents and trashed=false" % folder_id})
             file_list = self.MakeFileListQuery("'%s' in parents and trashed=false" % folder_id)
             for f in file_list:
                 self.fcount += 1
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_UPDATE, self.fcount)
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
-#Migration V3 API
-#                    self.driveTree.AddFolder(folder_id, f['id'], f['title'], f)
                     self.driveTree.AddFolder(folder_id, f['id'], f['name'], f)
                     self.calculateUsageOfFolder(f['id'])
                 else:

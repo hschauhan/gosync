@@ -17,13 +17,28 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import wx, os, time
-import sys, os, wx, ntpath, defines, threading, math, webbrowser
-from GoSyncModel import GoSyncModel, ClientSecretsNotFound
-from defines import *
+import sys
+if sys.version_info > (3,):
+    long = int
+try :
+	import wx.adv
+	wxgtk4 = True
+except (ImportError, ValueError):
+	wxgtk4 = False
+import sys, os, wx, ntpath, threading, math, webbrowser
 from threading import Timer
-from DriveUsageBox import DriveUsageBox
-from GoSyncEvents import *
-from GoSyncSettingsPage import SettingsPage
+try :
+	from .GoSyncModel import GoSyncModel, ClientSecretsNotFound
+	from .defines import *
+	from .DriveUsageBox import DriveUsageBox
+	from .GoSyncEvents import *
+	from .GoSyncSettingsPage import SettingsPage
+except (ImportError, ValueError):
+	from GoSyncModel import GoSyncModel, ClientSecretsNotFound
+	from defines import *
+	from DriveUsageBox import DriveUsageBox
+	from GoSyncEvents import *
+	from GoSyncSettingsPage import SettingsPage
 
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()
@@ -108,9 +123,9 @@ class GoSyncController(wx.Frame):
         title_string = "GoSync - %s (%s used of %s)" % (self.aboutdrive['user']['displayName'],
 
 
-self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])),
+	    self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])),
 
-self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
+	    self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         self.SetTitle(title_string)
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
@@ -205,7 +220,10 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         else:
             self.Bind(wx.EVT_MENU, func, id=item.GetId())
 
-        menu.AppendItem(item)
+        if wxgtk4 :
+            menu.Append(item)
+        else:
+            menu.AppendItem(item)
         return item
 
     def FileSizeHumanize(self, size):
@@ -214,7 +232,7 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
             return "0B"
         units = ['B','KB','MB','GB','TB','PB','EB','ZB','YB']
         p = math.floor(math.log(size, 2)/10)
-        return "%.3f%s" % (size/math.pow(1024,p),units[int(p)])
+        return "%.3f%s" % (size/math.pow(1024,p),units[long(p)])
 
     def OnExit(self, event):
         dial = wx.MessageDialog(None, 'GoSync will stop syncing files until restarted.\nAre you sure to quit?\n',
@@ -239,7 +257,10 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
 
     def OnAbout(self, evt):
         """About GoSync"""
-        about = wx.AboutDialogInfo()
+        if wxgtk4 :
+            about = wx.adv.AboutDialogInfo()
+        else:
+            about = wx.AboutDialogInfo()
         about.SetIcon(wx.Icon(ABOUT_ICON, wx.BITMAP_TYPE_PNG))
         about.SetName(APP_NAME)
         about.SetVersion(APP_VERSION)
@@ -249,4 +270,7 @@ self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
         about.SetLicense(APP_LICENSE)
         about.AddDeveloper(APP_DEVELOPER)
         about.AddArtist(APP_DEVELOPER)
-        wx.AboutBox(about)
+        if wxgtk4 :
+            wx.adv.AboutBox(about)
+        else:
+            wx.AboutBox(about)

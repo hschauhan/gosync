@@ -17,10 +17,16 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import sys, os, wx, GoSyncController, GoSyncModel
+import sys, os, wx
 from os.path import expanduser, dirname, relpath
-from GoSyncController import GoSyncController
-from defines import *
+try : 
+    from .GoSyncModel import *
+    from .GoSyncController import GoSyncController
+    from .defines import *
+except (ImportError, ValueError):
+    import GoSyncModel
+    from GoSyncController import GoSyncController
+    from defines import *
 
 # Add the current path to gosync path.
 sys.path.insert(0, APP_PATH)
