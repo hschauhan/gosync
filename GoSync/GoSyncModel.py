@@ -136,6 +136,7 @@ class GoSyncModel(object):
                 raise ClientSecretsNotFound()
         self.SendlToLog(2,"Initialize - Completed Credentials Verification")
 
+        self.SendlToLog(2, "Initialize - Saving credentials")
         if not os.path.exists(self.settings_file) or not os.path.isfile(self.settings_file):
             sfile = open(self.settings_file, 'w')
             sfile.write("save_credentials: False")
@@ -146,10 +147,12 @@ class GoSyncModel(object):
             sfile.write("save_credentials_backend: file\n")
             sfile.close()
 
+        self.SendlToLog(2, "Initialize - starting oberserver")
         self.observer = Observer()
+        self.SendlToLog(2, "Initialize - Going for authentication")
         self.DoAuthenticate()
         self.about_drive = self.drive.about().get(fields='user, storageQuota').execute()
-        self.SendlToLog(3,"Initialize - Completed Drive Quota Execution")
+        self.SendlToLog(2,"Initialize - Completed Drive Quota Execution")
 
         self.user_email = self.about_drive['user']['emailAddress']
         self.SendlToLog(3,"Initialize - Completed Account Information Load")
@@ -303,14 +306,20 @@ class GoSyncModel(object):
             # time.
             if os.path.exists(self.client_pickle):
                 with open(self.client_pickle, 'rb') as token:
+                    self.SendlToLog(2, "Authenticate - Loading pickle file")
                     creds = pickle.load(token)
             # If there are no (valid) credentials available, let the user log in.
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
+                    self.SendlToLog(2, "Authenticate - expired. Refreshing")
                     creds.refresh(Request())
                 else:
+                    self.SendlToLog(2, "Authenticate - New authentication")
+                    self.SendlToLog(2, "Authenticate - File %s" % (self.credential_file))
                     flow = InstalledAppFlow.from_client_secrets_file(self.credential_file, SCOPES)
+                    self.SendlToLog(2, "Authenticate - running local server")
                     creds = flow.run_local_server(port=0)
+                self.SendlToLog(2, "Authenticate - Saving pickle file")
                 # Save the credentials for the next run
                 with open(self.client_pickle, 'wb') as token:
                     pickle.dump(creds, token)

@@ -269,7 +269,7 @@ class GoSyncController(wx.Frame):
         about.SetWebSite(APP_WEBSITE)
         about.SetLicense(APP_LICENSE)
         about.AddDeveloper(APP_DEVELOPER)
-        about.AddArtist(APP_DEVELOPER)
+        about.AddArtist(ART_DEVELOPER)
         if wxgtk4 :
             wx.adv.AboutBox(about)
         else:

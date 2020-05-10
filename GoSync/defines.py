@@ -20,8 +20,6 @@ import os,sys
 
 APP_LICENSE = """GoSync is an open source Google Drive(TM) client written in python
 
-Copyright (C) 2015  Himanshu Chauhan
-
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
 as published by the Free Software Foundation; either version 2
@@ -36,10 +34,11 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 """
-APP_DEVELOPER = 'Himanshu Chauhan'
-APP_DEVELOPER_EMAIL = 'hschauhan@nulltrace.org'
+APP_DEVELOPER = 'Himanshu Chauhan, Alain Robillard'
+ART_DEVELOPER = 'Himanshu Chauhan'
+APP_DEVELOPER_EMAIL = 'hschauhan@nulltrace.org, arentoine@gmail.com'
 APP_WEBSITE = 'http://www.nulltrace.org/p/gosync.html'
-APP_COPYRIGHT = '(c) 2015 - 2022 Himanshu Chauhan'
+APP_COPYRIGHT = '(c) 2015 - 2022 Himanshu Chauhan, Alain Robillard'
 APP_DESCRIPTION = 'GoSync is an open source Google Drive client written in python.'
 APP_CONFIG_FILE_NAME = 'gosyncrc'
 CLIENT_SECRET_HELP_SITE='https://github.com/arentoine/gosync/wiki'
@@ -52,4 +51,4 @@ TRAY_ICON = HERE + '/resources/GoSyncIcon.png'
 APP_ICON = HERE + '/resources/GoSyncIcon-16.png'
 ABOUT_ICON = HERE + '/resources/GoSyncIcon-64.png'
 APP_NAME = 'GoSync'
-APP_VERSION = '0.4'
+APP_VERSION = '0.5'
