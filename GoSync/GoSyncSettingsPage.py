@@ -47,8 +47,6 @@ class SettingsPage(wx.Panel):
         self.dstc.Disable()
         self.cb.Bind(wx.EVT_CHECKBOX, self.SyncSetting)
 
-        btn = wx.Button(self, label="Refresh")
-        btn.Bind(wx.EVT_BUTTON, self.RefreshTree)
         self.Bind(CT.EVT_TREE_ITEM_CHECKED, self.ItemChecked)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
@@ -60,9 +58,7 @@ class SettingsPage(wx.Panel):
         sizer.Add(t1, 0, wx.ALL)
         sizer.Add(self.cb, 0, wx.ALL)
         sizer.Add(self.dstc, 1, wx.EXPAND)
-        sizer.Add(btn, 0, wx.ALL|wx.CENTER, 5)
         self.SetSizer(sizer)
-
 
     def SyncSetting(self, event):
         if self.cb.GetValue():
@@ -77,7 +73,10 @@ class SettingsPage(wx.Panel):
 
     def ItemChecked(self, event):
         folder = self.dstc.GetPyData(event.GetItem())
-        self.sync_model.SetSyncSelection(folder)
+        if event.GetItem().IsChecked():
+            self.sync_model.SetSyncSelection(folder)
+        else:
+            self.sync_model.RemoveSyncSelection(folder)
 
     def MakeDriveTree(self, gnode, tnode):
         file_list = gnode.GetChildren()
@@ -111,7 +110,7 @@ class SettingsPage(wx.Panel):
         self.dstc.DeleteAllItems()
         self.dstc_root = self.dstc.AddRoot("Google Drive Root")
         self.MakeDriveTree(driveTree.GetRoot(), self.dstc_root)
-        self.dstc.ExpandAll()
+        #self.dstc.ExpandAll()
         sync_list = self.sync_model.GetSyncList()
         for d in sync_list:
             if d[0] == 'root':
@@ -121,7 +120,7 @@ class SettingsPage(wx.Panel):
             else:
                 self.cb.SetValue(False)
                 self.dstc.Enable()
-                break
+                #break
 
         item_list = self.GetItemsToBeChecked(sync_list)
         for item in item_list:
