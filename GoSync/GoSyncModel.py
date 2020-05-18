@@ -20,6 +20,10 @@ import sys, os, wx, ntpath, threading, hashlib, time, copy, io
 import shutil
 if sys.version_info > (3,):
     long = int
+    import urllib.request
+else:
+    import urllib2
+
 #from pydrive.auth import GoogleAuth
 #from pydrive.drive import GoogleDrive
 from os.path import expanduser
@@ -34,7 +38,6 @@ import logging
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-import urllib.request
 import json, pickle
 try :
 	from .GoSyncDriveTree import GoogleDriveTree
@@ -49,7 +52,8 @@ class ClientSecretsNotFound(RuntimeError):
     """Client secrets file was not found"""
 class FileNotFound(RuntimeError):
     """File was not found on google drive"""
-
+class FolderEmpty(Exception):
+    """Folder is empty"""
 class FolderNotFound(RuntimeError):
     """Folder on Google Drive was not found"""
     def __init__(self, err_folder):
@@ -793,7 +797,10 @@ class GoSyncModel(object):
     #################################################
     def IsInternetReachable(self, host='http://www.google.com'):
         try:
-            urllib.request.urlopen(host)
+            if sys.version_info > (3,):
+                urllib.request.urlopen(host)
+            else:
+                urllib2.urlopen(host)
             return True
         except:
             return False
@@ -802,6 +809,7 @@ class GoSyncModel(object):
         try:
             page_token = None
             filelist = []
+            #self.SendlToLog(3, "Query: %s\n" % query)
             while True:
                 response = self.drive.files().list(q=query,
                                       spaces='drive',
@@ -817,8 +825,8 @@ class GoSyncModel(object):
                     self.SendlToLog(1, "Internet is down\n")
                     raise InternetNotReachable()
                 else:
-                    self.SendlToLog(1, "FileListQueryFailed\n")
-                    raise FileListQueryFailed()
+                    self.SendlToLog(1, "Empty Folder\n")
+                    return None
             else:
                 self.SendlToLog(3, "MakeFileListQuery: SUCCESS\n")
                 return filelist
@@ -835,7 +843,6 @@ class GoSyncModel(object):
                 self.SendlToLog(1, "Internet is down\n")
                 raise InternetNotReachable()
             else:
-                self.SendlToLog(1,"MakeFileListQuery: failed with reason %s\n" % error.resp.reason)
                 raise FileListQueryFailed()
 
     def TotalFilesInFolder(self, parent='root'):
@@ -901,7 +908,13 @@ class GoSyncModel(object):
 
         try:
             file_list = self.MakeFileListQuery("'%s' in parents and trashed=false" % parent)
+
+            #This direcotry is empty nothing to sync.
+            if not file_list:
+                return
+
             for f in file_list:
+                self.SendlToLog(3, "Checking: %s\n" % f['name'])
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Checking: %s" % f['name']})
                 if not self.syncRunning.is_set():
                     self.SendlToLog(3,"SyncRemoteDirectory: Sync has been paused. Aborting.\n")
@@ -1055,8 +1068,14 @@ class GoSyncModel(object):
     def calculateUsageOfFolder(self, folder_id):
         try:
             file_list = self.MakeFileListQuery("'%s' in parents and trashed=false" % folder_id)
+
+            #Folder is empty
+            if not file_list:
+                return
+
             for f in file_list:
                 self.fcount += 1
+                self.SendlToLog(3, "Scanning: %s (%s -> %s)\n" % (f['name'], f['id'], folder_id))
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SCAN_UPDATE, {'Scanning Folder: %s' % f['name']})
                 if f['mimeType'] == 'application/vnd.google-apps.folder':
                     self.driveTree.AddFolder(folder_id, f['id'], f['name'], f)
