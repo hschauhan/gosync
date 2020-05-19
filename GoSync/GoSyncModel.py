@@ -845,16 +845,17 @@ class GoSyncModel(object):
                         self.SendlToLog(1, "Empty Folder\n")
                         return None
                 else:
-                    self.SendlToLog(3, "MakeFileListQuery: SUCCESS\n")
                     return filelist
             except HttpError as error:
+                self.SendlToLog(1, "MakeFileListQuery - %s\n", error.resp.reason)
+                if error.resp.status in [403, 500, 503, 429]:
+                    self.SendlToLog(1, "MakeFileListQuery - Status: %d. (Retrying)\n", error.resp.status)
+                    time.sleep(5)
+                    continue
+
                 if not self.IsInternetReachable():
                     self.SendlToLog(1, "MakeFileListQuery - Internet is down\n")
                     raise InternetNotReachable() from HttpError
-                else:
-                    self.SendlToLog(1, "MakeFileListQuery: HTTP Error\n")
-                    if error.resp.reason in ['userRateLimitExceeded', 'quotaExceeded']:
-                        self.SendlToLog(1,"MakeFileListQuery: User Rate Limit/Quota Exceeded. Will try later\n")
             except Exception as e:
                 self.SendlToLog(1, "Exception Error: %d\n" % e.errno)
                 #If connection reset by peer retry
@@ -909,16 +910,31 @@ class GoSyncModel(object):
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
             GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
                                               {'Downloading %s' % fd})
-            request = self.drive.files().get_media(fileId=file_obj['id'])
-            fh = io.FileIO(abs_filepath, 'wb')
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while done is False:
-                status, done = downloader.next_chunk()            
-            fh.close()
-            self.updates_done = 1
-            self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
-            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
+            while True:
+                try:
+                    request = self.drive.files().get_media(fileId=file_obj['id'])
+                    fh = io.FileIO(abs_filepath, 'wb')
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while done is False:
+                        status, done = downloader.next_chunk()
+                    fh.close()
+                    self.updates_done = 1
+                    self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
+                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
+                except HttpError as err:
+                    self.SendlToLog(3, "DownloadFileByObject: Error: %s\n", err.resp.reason)
+                    #These mean backend error, needs retry after atleast 1 second
+                    if err.resp.status in [403, 500, 503, 429]:
+                        self.SendlToLog(3, "DownloadFileByObject: Backend error. Retrying after 5 seconds.\n")
+                        time.sleep(5)
+                        continue
+                    else:
+                        raise
+                except Exception as er:
+                    print(er)
+                    raise
+                break
 
 
 #### SyncRemoteDirectory
