@@ -454,8 +454,12 @@ class GoSyncModel(object):
             dirpath = os.path.dirname(drivepath)
             if dirpath == '':
                 self.SendlToLog(3,'Creating %s file in root\n' % file_path)
-                self.CreateRegularFile(file_path, 'root', newfile)
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'UpLoading %s' % file_path})
+                try:
+                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'UpLoading %s in root' % file_path})
+                    self.CreateRegularFile(file_path, 'root', newfile)
+                except:
+                    self.SendlToLog(1, "CreateRegularFile: Failed to upload %s" % file_path)
+                    raise RegularFileUploadFailed()
             else:
                 try:
                     f = self.LocateFolderOnDrive(dirpath)
@@ -467,15 +471,22 @@ class GoSyncModel(object):
                     # must have come first.
                     # So,
                     # Folder not found? That cannot happen. Can it?
+                    self.SendlToLog(1, "CreateRegularFile: Failed to upload %s in %s" % file_path, dir_path)
                     raise RegularFileUploadFailed()
         else:
             self.CreateDirectoryByPath(file_path)
 
     def UploadObservedFile(self, file_path):
         self.sync_lock.acquire()
-        self.UploadFile(file_path)
+        try:
+            self.UploadFile(file_path)
+        except InternetNotReachable as ie:
+            self.SendlToLog(1, "UploadObservedFile - Internet is down")
+        except:
+            self.SendlToLog(1, "UploadObservedFile - Failed to upload file %s\n" % file_path)
+
+        self.SendlToLog(3, "UploadObservedFile - Releasing lock")
         self.sync_lock.release()
-##        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
 
     def RenameFile(self, file_object, new_title):
         try:
@@ -522,6 +533,9 @@ class GoSyncModel(object):
         self.SendlToLog(3,{"TRASH_FILE: dirpath to delete: %s\n" % drive_path})
         try:
             ftd = self.LocateFileOnDrive(drive_path)
+            if not ftd:
+                self.SendlToLog(1,{"TRASH_FILE: invalid file handle for %s\n" % drive_path})
+
             try:
                 self.TrashFile(ftd)
             except RegularFileTrashFailed:
@@ -532,6 +546,8 @@ class GoSyncModel(object):
         except (FileNotFound, FileListQueryFailed, FolderNotFound):
             self.SendlToLog(1,{"TRASH_FILE: Failed to locate %s file on drive\n" % drive_path})
             pass
+        except:
+            self.SendlToLog(1,{"TRASH_FILE: Unknown exception for file %s (%s)\n" % (drive_path, file_path)})
 
         self.sync_lock.release()
 
@@ -630,7 +646,7 @@ class GoSyncModel(object):
                     self.SendlToLog(3, "LocateFileInFolder - Found\n")
                     return f
             self.SendlToLog(1, "LocateFileInFolder - %s not found\n" % filename)
-            return None
+            raise FileNotFound()
         except InternetNotReachable:
             self.SendlToLog(1, "Internet is down\n")
             raise
@@ -653,22 +669,22 @@ class GoSyncModel(object):
                     self.SendlToLog(3, "LocateFileOnDrive - File found\n")
                     return fil
                 except InternetNotReachable:
-                    self.SendlToLog(3,"Internet seems to be down!\n")
+                    self.SendlToLog(3,"LocateFileOnDrive - Internet seems to be down!\n")
                     raise
                 except FileNotFound:
-                    self.SendlToLog(3,"LocateFileOnDrive: Local File (%s) not in remote." % filename)
+                    self.SendlToLog(3,"LocateFileOnDrive - Local File (%s) not in remote." % filename)
                     raise
                 except FileListQueryFailed:
-                    self.SendlToLog(3,"LocateFileOnDrive: Locate File (%s) list query failed" % filename)
+                    self.SendlToLog(3,"LocateFileOnDrive - Locate File (%s) list query failed" % filename)
                     raise
             except InternetNotReachable:
-                self.SendlToLog(3, "Internet seems to be down!\n")
+                self.SendlToLog(3, "LocateFileOnDrive (Folder) - Internet seems to be down!\n")
                 raise
             except FolderNotFound:
-                self.SendlToLog(3,"LocateFileOnDrive: Local Folder (%s) not in remote" % dirpath)
+                self.SendlToLog(3,"LocateFileOnDrive - Local Folder (%s) not in remote" % dirpath)
                 raise
             except FileListQueryFailed:
-                self.SendlToLog(3,"LocateFileOnDrive: Locate Folder (%s) list query failed" % dirpath)
+                self.SendlToLog(3,"LocateFileOnDrive - Locate Folder (%s) list query failed" % dirpath)
                 raise
         else:
             try:
@@ -677,7 +693,7 @@ class GoSyncModel(object):
                 self.SendlToLog(3, "LocateFileOnDrive - File found\n")
                 return fil
             except InternetNotReachable:
-                self.SendlToLog(3, "Internet seems to be down!\n")
+                self.SendlToLog(3, "LocateFileOnDrive (File) - Internet seems to be down!\n")
                 raise
             except FileNotFound:
                 self.SendlToLog(3,"LocateFileOnDrive: Local File (%s) not in remote." % filename)
@@ -806,44 +822,53 @@ class GoSyncModel(object):
             return False
 
     def MakeFileListQuery(self, query):
-        try:
-            page_token = None
-            filelist = []
-            #self.SendlToLog(3, "Query: %s\n" % query)
-            while True:
-                response = self.drive.files().list(q=query,
-                                      spaces='drive',
-                                      fields='nextPageToken, files(id, name, mimeType, size, md5Checksum)',
-                                      pageToken=page_token).execute()
-                filelist.extend(response.get('files',[]))
-                page_token = response.get('nextPageToken', None)
-                if page_token is None:
-                    break
+        while True:
+            try:
+                page_token = None
+                filelist = []
+                #self.SendlToLog(3, "Query: %s\n" % query)
+                while True:
+                    response = self.drive.files().list(q=query,
+                                                       spaces='drive',
+                                                       fields='nextPageToken, files(id, name, mimeType, size, md5Checksum)',
+                                                       pageToken=page_token).execute()
+                    filelist.extend(response.get('files',[]))
+                    page_token = response.get('nextPageToken', None)
+                    if page_token is None:
+                        break
 
-            if not filelist:
-                if not self.IsInternetReachable():
-                    self.SendlToLog(1, "Internet is down\n")
-                    raise InternetNotReachable()
+                if not filelist:
+                    if not self.IsInternetReachable():
+                        self.SendlToLog(1, "Internet is down\n")
+                        raise InternetNotReachable()
+                    else:
+                        self.SendlToLog(1, "Empty Folder\n")
+                        return None
                 else:
-                    self.SendlToLog(1, "Empty Folder\n")
-                    return None
-            else:
-                self.SendlToLog(3, "MakeFileListQuery: SUCCESS\n")
-                return filelist
-        except HttpError as error:
-            if not self.IsInternetReachable():
-                self.SendlToLog(1, "Internet is down\n")
-                raise InternetNotReachable()
-            else:
-                self.SendlToLog(1, "MakeFileListQuery: HTTP Error\n")
-                if error.resp.reason in ['userRateLimitExceeded', 'quotaExceeded']:
-                    self.SendlToLog(1,"MakeFileListQuery: User Rate Limit/Quota Exceeded. Will try later\n")
-        except:
-            if not self.IsInternetReachable():
-                self.SendlToLog(1, "Internet is down\n")
-                raise InternetNotReachable()
-            else:
-                raise FileListQueryFailed()
+                    self.SendlToLog(3, "MakeFileListQuery: SUCCESS\n")
+                    return filelist
+            except HttpError as error:
+                if not self.IsInternetReachable():
+                    self.SendlToLog(1, "MakeFileListQuery - Internet is down\n")
+                    raise InternetNotReachable() from HttpError
+                else:
+                    self.SendlToLog(1, "MakeFileListQuery: HTTP Error\n")
+                    if error.resp.reason in ['userRateLimitExceeded', 'quotaExceeded']:
+                        self.SendlToLog(1,"MakeFileListQuery: User Rate Limit/Quota Exceeded. Will try later\n")
+            except Exception as e:
+                self.SendlToLog(1, "Exception Error: %d\n" % e.errno)
+                #If connection reset by peer retry
+                if e.errno == 104:
+                    self.SendlToLog(1, "Connection reset by peer. Retrying...\n")
+                    continue
+
+                if not self.IsInternetReachable():
+                    self.SendlToLog(1, "MakeFileListQuery (unknown except) - Internet is down\n")
+                    raise InternetNotReachable() from None
+                else:
+                    self.SendlToLog(1, "MakeFileListQuery (unknown except %d) - Raising FileListQueryFailed", e.errno)
+                    raise FileListQueryFailed() from None
+            break
 
     def TotalFilesInFolder(self, parent='root'):
         file_count = 0
@@ -969,28 +994,37 @@ class GoSyncModel(object):
 #### run (Sync Local and Remote Directory)
     def run(self):
         while True:
+            self.SendlToLog(3, "SyncThread - run - Waiting for Sync to be enabled")
             self.syncRunning.wait()
 
             if not self.IsInternetReachable():
+                self.SendlToLog(3, "SyncThread - run - Internet is down. Clearing running.")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
                 self.syncRunning.clear()
                 continue
 
+            self.SendlToLog(3, "SyncThread - run - Trying to acquire lock.")
             self.sync_lock.acquire()
+            self.SendlToLog(3, "SyncThread - run - Lock acquired.")
 
             try:
+                self.SendlToLog(3, "SyncThread - run - Validating sync settings")
                 self.validate_sync_settings()
+                self.SendlToLog(3, "SyncThread - run - validated")
             except InternetNotReachable:
+                self.SendlToLog(3, "SyncThread - run - Validate sync settings => Internet is down")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
                 self.syncRunning.clear()
                 self.sync_lock.release()
                 continue
             except FolderNotFound as f:
+                self.SendlToLog(3, "SyncThread - run - Validate sync settings => Folder %s not found" % f.e_folder)
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_INV_FOLDER, f.e_folder)
                 self.syncRunning.clear()
                 self.sync_lock.release()
                 continue
 
+            self.SendlToLog(3, "SyncThread - run - Staring the sync now")
             self.syncing_now = True
             try:
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
@@ -1026,14 +1060,17 @@ class GoSyncModel(object):
                     self.usageCalculateEvent.set()
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
             except InternetNotReachable:
+                self.SendlToLog(3, "SyncThread - run - Internet not reachable")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
                 self.syncRunning.clear()
                 self.sync_lock.release()
                 self.syncing_now = False
                 continue
             except:
+                self.SendlToLog(3, "SyncThread - run - Unknown exception")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
 
+            self.SendlToLog(3, "SyncThread - run - Releasing lock")
             self.sync_lock.release()
             self.syncing_now = False
 
