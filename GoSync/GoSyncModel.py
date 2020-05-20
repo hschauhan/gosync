@@ -922,6 +922,7 @@ class GoSyncModel(object):
                     self.updates_done = 1
                     self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
+                    break
                 except HttpError as err:
                     self.SendlToLog(3, "DownloadFileByObject: Error: %s\n", err.resp.reason)
                     #These mean backend error, needs retry after atleast 1 second
@@ -931,10 +932,9 @@ class GoSyncModel(object):
                         continue
                     else:
                         raise
-                except Exception as er:
+                except:
                     print(er)
                     raise
-                break
 
 
 #### SyncRemoteDirectory
@@ -972,7 +972,21 @@ class GoSyncModel(object):
                         os.makedirs(abs_dirpath)
                         self.SendlToLog(3,"SyncRemoteDirectory: Created directory (%s)" % abs_dirpath)
                     self.SendlToLog(3,"SyncRemoteDirectory: Syncing directory (%s)\n" % f['name'])
-                    self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['name']))
+                    while True:
+                        try:
+                            self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['name']))
+                            break
+                        except InternetNotReachable:
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
+                            self.SendlToLog(1, "SyncRemoteDirectory - Network has gone down")
+                            while True:
+                                if self.IsInternetReachable():
+                                    GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 0)
+                                    self.SendlToLog(1, "SyncRemoteDirectory - Network is up!")
+                                    break
+                                else:
+                                    time.sleep(5)
+                                    continue
                     if not self.syncRunning.is_set():
                         self.SendlToLog(3,"SyncRemoteDirectory: Sync has been paused. Aborting.\n")
                         return
