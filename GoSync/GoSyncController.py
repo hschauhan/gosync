@@ -42,6 +42,7 @@ except (ImportError, ValueError):
 
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()
+ID_RECALC_USAGE = wx.NewId()
 
 mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX) ^ (wx.RESIZE_BORDER)
 HERE=os.path.abspath(os.path.dirname(__file__))
@@ -89,8 +90,14 @@ class PageAccount(wx.Panel):
             self.driveUsageBar.SetStatusMessage("Sorry, could not calculate your Google Drive usage.")
 
     def OnUsageCalculationUpdate(self, event):
-        percent = (event.data * 100)/self.totalFiles
-        self.driveUsageBar.SetStatusMessage("Calculating your categorical usage... (%d%%)\n" % percent)
+        self.totalFiles = event.data
+        self.driveUsageBar.SetStatusMessage("Calculating usage. Files Scanned: %d\n" % self.totalFiles)
+        self.driveUsageBar.SetMoviesUsage(self.sync_model.GetMovieUsage())
+        self.driveUsageBar.SetDocumentUsage(self.sync_model.GetDocumentUsage())
+        self.driveUsageBar.SetOthersUsage(self.sync_model.GetOthersUsage())
+        self.driveUsageBar.SetAudioUsage(self.sync_model.GetAudioUsage())
+        self.driveUsageBar.SetPhotoUsage(self.sync_model.GetPhotoUsage())
+        self.driveUsageBar.RePaint()
 
     def OnUsageCalculationStarted(self, event):
         self.totalFiles = event.data
@@ -135,7 +142,8 @@ class GoSyncController(wx.Frame):
         menu_txt = 'Pause/Resume Sync'
 
         self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
-        self.CreateMenuItem(menu, 'Synch Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
+        self.CreateMenuItem(menu, 'Sync Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
+        self.CreateMenuItem(menu, 'Recalculate Drive Usage', self.OnRecalculateDriveUsage, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_RECALC_USAGE)
 
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
@@ -169,6 +177,7 @@ class GoSyncController(wx.Frame):
         if self.sync_model.IsSyncEnabled():
             self.sb.SetStatusText("Running", 1)
         else:
+            self.sb.SetStatusText("")
             self.sb.SetStatusText("Paused", 1)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_STARTED,
@@ -179,15 +188,49 @@ class GoSyncController(wx.Frame):
                                           self.OnSyncDone)
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_TIMER,
                                           self.OnSyncTimer)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_INTERNET_UNREACHABLE,
+                                          self.OnInternetDown)
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_INV_FOLDER,
                                           self.OnSyncInvalidFolder)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SCAN_UPDATE,
+                                          self.OnScanUpdate)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
+                                          self.OnUsageCalculationDone)
 
         self.sync_model.SetTheBallRolling()
 
+    def OnUsageCalculationDone(self, event):
+        self.sb.SetStatusText("Usage calculation completed.")
+
+    def OnInternetDown(self, event):
+        self.sb.SetStatusText("Network is down")
+        self.sb.SetStatusText("Paused", 1)
+        dial = wx.MessageDialog(None, 'Internet seems to be down. Sync has been paused.\nPlease enable sync after the Internet is reachable.',
+                                'Internet Down', wx.OK | wx.ICON_EXCLAMATION)
+        res = dial.ShowModal()
+        dial.Destroy()
+
     def OnSyncInvalidFolder(self, event):
-        dial = wx.MessageDialog(None, 'Some of the folders to be sync\'ed were not found on remote server.\nPlease check.\n',
+        dial = wx.MessageDialog(None, 'Folder %s is selected for sync. It could not be found on remote server.\nPlease check settings again.\n' % event.data,
                                 'Error', wx.OK | wx.ICON_EXCLAMATION)
         res = dial.ShowModal()
+        dial.Destroy()
+
+    def OnRecalculateDriveUsage(self, event):
+        if self.sync_model.IsCalculatingDriveUsage() == True:
+            dial = wx.MessageDialog(None, 'GoSync is already scaningfiles on drive.',
+                                    'In Progress', wx.OK | wx.ICON_WARNING)
+            res = dial.ShowModal()
+            dial.Destroy()
+            return
+        elif self.sync_model.IsSyncRunning() == True:
+            dial = wx.MessageDialog(None, 'GoSync is currently syncing files from the Drive.\nThe usage will be refreshed later.',
+                                    'In Progress', wx.OK | wx.ICON_WARNING)
+            res = dial.ShowModal()
+            dial.Destroy()
+
+        self.sync_model.ForceDriveUsageCalculation()
+
 
     def OnSyncTimer(self, event):
         unicode_string = event.data.pop()
@@ -205,6 +248,10 @@ class GoSyncController(wx.Frame):
             self.sb.SetStatusText("Sync completed.")
         else:
             self.sb.SetStatusText("Sync failed. Please check the logs.")
+
+    def OnScanUpdate(self, event):
+        unicode_string = event.data.pop()
+        self.sb.SetStatusText(unicode_string.encode('ascii', 'ignore'))
 
     def CreateMenuItem(self, menu, label, func, icon=None, id=None):
         if id:
@@ -247,6 +294,7 @@ class GoSyncController(wx.Frame):
     def OnToggleSync(self, evt):
         if self.sync_model.IsSyncEnabled():
             self.sync_model.StopSync()
+            self.sb.SetStatusText("Sync is paused")
             self.sb.SetStatusText("Paused", 1)
         else:
             self.sync_model.StartSync()
@@ -269,7 +317,7 @@ class GoSyncController(wx.Frame):
         about.SetWebSite(APP_WEBSITE)
         about.SetLicense(APP_LICENSE)
         about.AddDeveloper(APP_DEVELOPER)
-        about.AddArtist(APP_DEVELOPER)
+        about.AddArtist(ART_DEVELOPER)
         if wxgtk4 :
             wx.adv.AboutBox(about)
         else:
