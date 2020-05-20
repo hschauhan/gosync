@@ -753,32 +753,42 @@ class GoSyncModel(object):
         self.SendlToLog(2,"### SyncLocalDirectory: - Sync Started")
         for root, dirs, files in os.walk(self.mirror_directory):
             for names in files:
-                if not self.syncRunning.is_set():
-                    self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
-                    return
+                while True:
+                    if not self.syncRunning.is_set():
+                        self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
+                        return
 
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Checking Local: %s" % names})
-                try:
-                    dirpath = os.path.join(root, names)
-                    drivepath = dirpath.split(self.mirror_directory+'/')[1]
-                    self.SendlToLog(3,"SyncLocalDirectory: Checking Local File (%s)" % drivepath)
-                    f = self.LocateFileOnDrive(drivepath)
-                    self.SendlToLog(2,"SyncLocalDirectory: Skipping Local File (%s) same as Remote\n" % dirpath)
-                except FileListQueryFailed:
-                    # if the file list query failed, we can't delete the local file even if
-                    # its gone in remote drive. Let the next sync come and take care of this
-                    # Log the event though
-                    self.SendlToLog(2,"SyncLocalDirectory: Remote File (%s) Check Failed. Aborting.\n" % dirpath)
-                    return
-                except InternetNotReachable:
-                    self.SendlToLog(2, "SyncLocalDirectory: Internet seems to be down!\n")
-                    raise
-                except:
-                    if os.path.exists(dirpath) and os.path.isfile(dirpath):
-                        self.SendlToLog(2,"SyncLocalDirectory: Uploading Local File (%s) - Not in Remote\n" % dirpath)
-                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Uploading: %s" % f['name']})
-                        #os.remove(dirpath)
-                        self.UploadFile(dirpath)
+                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Checking Local: %s" % names})
+                    try:
+                        dirpath = os.path.join(root, names)
+                        drivepath = dirpath.split(self.mirror_directory+'/')[1]
+                        self.SendlToLog(3,"SyncLocalDirectory: Checking Local File (%s)" % drivepath)
+                        f = self.LocateFileOnDrive(drivepath)
+                        self.SendlToLog(2,"SyncLocalDirectory: Skipping Local File (%s) same as Remote\n" % dirpath)
+                        break
+                    except FileListQueryFailed:
+                        # if the file list query failed, we can't delete the local file even if
+                        # its gone in remote drive. Let the next sync come and take care of this
+                        # Log the event though
+                        self.SendlToLog(2,"SyncLocalDirectory: Remote File (%s) Check Failed. Aborting.\n" % dirpath)
+                        return
+                    except InternetNotReachable:
+                        self.SendlToLog(2, "SyncLocalDirectory: Network is down!\n")
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
+                        while True:
+                            if self.IsInternetReachable():
+                                GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 0)
+                                self.SendlToLog(2, "SyncLocalDirectory: Network is up!\n")
+                                break
+                            else:
+                                time.sleep(5)
+                                continue
+                    except:
+                        if os.path.exists(dirpath) and os.path.isfile(dirpath):
+                            self.SendlToLog(2,"SyncLocalDirectory: Uploading Local File (%s) - Not in Remote\n" % dirpath)
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Uploading: %s" % f['name']})
+                            #os.remove(dirpath)
+                            self.UploadFile(dirpath)
 
             for names in dirs:
                 if not self.syncRunning.is_set():
