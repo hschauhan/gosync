@@ -753,32 +753,42 @@ class GoSyncModel(object):
         self.SendlToLog(2,"### SyncLocalDirectory: - Sync Started")
         for root, dirs, files in os.walk(self.mirror_directory):
             for names in files:
-                if not self.syncRunning.is_set():
-                    self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
-                    return
+                while True:
+                    if not self.syncRunning.is_set():
+                        self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
+                        return
 
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Checking Local: %s" % names})
-                try:
-                    dirpath = os.path.join(root, names)
-                    drivepath = dirpath.split(self.mirror_directory+'/')[1]
-                    self.SendlToLog(3,"SyncLocalDirectory: Checking Local File (%s)" % drivepath)
-                    f = self.LocateFileOnDrive(drivepath)
-                    self.SendlToLog(2,"SyncLocalDirectory: Skipping Local File (%s) same as Remote\n" % dirpath)
-                except FileListQueryFailed:
-                    # if the file list query failed, we can't delete the local file even if
-                    # its gone in remote drive. Let the next sync come and take care of this
-                    # Log the event though
-                    self.SendlToLog(2,"SyncLocalDirectory: Remote File (%s) Check Failed. Aborting.\n" % dirpath)
-                    return
-                except InternetNotReachable:
-                    self.SendlToLog(2, "SyncLocalDirectory: Internet seems to be down!\n")
-                    raise
-                except:
-                    if os.path.exists(dirpath) and os.path.isfile(dirpath):
-                        self.SendlToLog(2,"SyncLocalDirectory: Uploading Local File (%s) - Not in Remote\n" % dirpath)
-                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Uploading: %s" % f['name']})
-                        #os.remove(dirpath)
-                        self.UploadFile(dirpath)
+                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Checking Local: %s" % names})
+                    try:
+                        dirpath = os.path.join(root, names)
+                        drivepath = dirpath.split(self.mirror_directory+'/')[1]
+                        self.SendlToLog(3,"SyncLocalDirectory: Checking Local File (%s)" % drivepath)
+                        f = self.LocateFileOnDrive(drivepath)
+                        self.SendlToLog(2,"SyncLocalDirectory: Skipping Local File (%s) same as Remote\n" % dirpath)
+                        break
+                    except FileListQueryFailed:
+                        # if the file list query failed, we can't delete the local file even if
+                        # its gone in remote drive. Let the next sync come and take care of this
+                        # Log the event though
+                        self.SendlToLog(2,"SyncLocalDirectory: Remote File (%s) Check Failed. Aborting.\n" % dirpath)
+                        return
+                    except InternetNotReachable:
+                        self.SendlToLog(2, "SyncLocalDirectory: Network is down!\n")
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
+                        while True:
+                            if self.IsInternetReachable():
+                                GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 0)
+                                self.SendlToLog(2, "SyncLocalDirectory: Network is up!\n")
+                                break
+                            else:
+                                time.sleep(5)
+                                continue
+                    except:
+                        if os.path.exists(dirpath) and os.path.isfile(dirpath):
+                            self.SendlToLog(2,"SyncLocalDirectory: Uploading Local File (%s) - Not in Remote\n" % dirpath)
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Uploading: %s" % f['name']})
+                            #os.remove(dirpath)
+                            self.UploadFile(dirpath)
 
             for names in dirs:
                 if not self.syncRunning.is_set():
@@ -822,6 +832,7 @@ class GoSyncModel(object):
             return False
 
     def MakeFileListQuery(self, query):
+        retry = 0
         while True:
             try:
                 page_token = None
@@ -856,19 +867,18 @@ class GoSyncModel(object):
                 if not self.IsInternetReachable():
                     self.SendlToLog(1, "MakeFileListQuery - Internet is down\n")
                     raise InternetNotReachable() from HttpError
-            except Exception as e:
-                self.SendlToLog(1, "Exception Error: %d\n" % e.errno)
-                #If connection reset by peer retry
-                if e.errno == 104:
-                    self.SendlToLog(1, "Connection reset by peer. Retrying...\n")
-                    continue
-
+            except:
                 if not self.IsInternetReachable():
                     self.SendlToLog(1, "MakeFileListQuery (unknown except) - Internet is down\n")
                     raise InternetNotReachable() from None
                 else:
-                    self.SendlToLog(1, "MakeFileListQuery (unknown except %d) - Raising FileListQueryFailed", e.errno)
-                    raise FileListQueryFailed() from None
+                    if retry == 0:
+                        self.SendlToLog(1, "MakeFileListQuery - Query failed. Trying one more time.")
+                        retry = 1;
+                        continue
+                    else:
+                        self.SendlToLog(1, "MakeFileListQuery (unknown except %d) - Raising FileListQueryFailed", e.errno)
+                        raise FileListQueryFailed() from None
             break
 
     def TotalFilesInFolder(self, parent='root'):
@@ -922,6 +932,7 @@ class GoSyncModel(object):
                     self.updates_done = 1
                     self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
+                    break
                 except HttpError as err:
                     self.SendlToLog(3, "DownloadFileByObject: Error: %s\n", err.resp.reason)
                     #These mean backend error, needs retry after atleast 1 second
@@ -931,10 +942,9 @@ class GoSyncModel(object):
                         continue
                     else:
                         raise
-                except Exception as er:
+                except:
                     print(er)
                     raise
-                break
 
 
 #### SyncRemoteDirectory
@@ -972,7 +982,21 @@ class GoSyncModel(object):
                         os.makedirs(abs_dirpath)
                         self.SendlToLog(3,"SyncRemoteDirectory: Created directory (%s)" % abs_dirpath)
                     self.SendlToLog(3,"SyncRemoteDirectory: Syncing directory (%s)\n" % f['name'])
-                    self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['name']))
+                    while True:
+                        try:
+                            self.SyncRemoteDirectory(f['id'], os.path.join(pwd, f['name']))
+                            break
+                        except InternetNotReachable:
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
+                            self.SendlToLog(1, "SyncRemoteDirectory - Network has gone down")
+                            while True:
+                                if self.IsInternetReachable():
+                                    GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 0)
+                                    self.SendlToLog(1, "SyncRemoteDirectory - Network is up!")
+                                    break
+                                else:
+                                    time.sleep(5)
+                                    continue
                     if not self.syncRunning.is_set():
                         self.SendlToLog(3,"SyncRemoteDirectory: Sync has been paused. Aborting.\n")
                         return
@@ -1016,8 +1040,13 @@ class GoSyncModel(object):
             if not self.IsInternetReachable():
                 self.SendlToLog(3, "SyncThread - run - Internet is down. Clearing running.")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
-                self.syncRunning.clear()
-                continue
+                while True:
+                    if not self.IsInternetReachable():
+                        time.sleep(5)
+                    else:
+                        self.SendlToLog(3, "SyncThread - run - Internet is up!")
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 0)
+                        break
 
             self.SendlToLog(3, "SyncThread - run - Trying to acquire lock.")
             self.sync_lock.acquire()
@@ -1029,8 +1058,6 @@ class GoSyncModel(object):
                 self.SendlToLog(3, "SyncThread - run - validated")
             except InternetNotReachable:
                 self.SendlToLog(3, "SyncThread - run - Validate sync settings => Internet is down")
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
-                self.syncRunning.clear()
                 self.sync_lock.release()
                 continue
             except FolderNotFound as f:
@@ -1078,7 +1105,6 @@ class GoSyncModel(object):
             except InternetNotReachable:
                 self.SendlToLog(3, "SyncThread - run - Internet not reachable")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
-                self.syncRunning.clear()
                 self.sync_lock.release()
                 self.syncing_now = False
                 continue

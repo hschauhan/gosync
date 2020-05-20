@@ -203,18 +203,36 @@ class GoSyncController(wx.Frame):
         self.sb.SetStatusText("Usage calculation completed.")
 
     def OnInternetDown(self, event):
-        self.sb.SetStatusText("Network is down")
-        self.sb.SetStatusText("Paused", 1)
-        dial = wx.MessageDialog(None, 'Internet seems to be down. Sync has been paused.\nPlease enable sync after the Internet is reachable.',
-                                'Internet Down', wx.OK | wx.ICON_EXCLAMATION)
-        res = dial.ShowModal()
-        dial.Destroy()
+        if event.data == 1:
+            self.sb.SetStatusText("Network is down")
+            if wxgtk4:
+                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Network has gone down!")
+                nmsg.SetFlags(wx.ICON_WARNING)
+                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+            else:
+                nmsg = wx.NotificationMessage(title="GoSync", message="Network has gone down!")
+                nmsg.SetFlags(wx.ICON_WARNING)
+                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
+        else:
+            self.sb.SetStatusText("Network is up!")
+            if wxgtk4:
+                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Network is up!")
+                nmsg.SetFlags(wx.ICON_INFORMATION)
+                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+            else:
+                nmsg = wx.NotificationMessage(title="GoSync", message="Network is up!")
+                nmsg.SetFlags(wx.ICON_INFORMATION)
+                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
 
     def OnSyncInvalidFolder(self, event):
-        dial = wx.MessageDialog(None, 'Folder %s is selected for sync. It could not be found on remote server.\nPlease check settings again.\n' % event.data,
-                                'Error', wx.OK | wx.ICON_EXCLAMATION)
-        res = dial.ShowModal()
-        dial.Destroy()
+        if wxgtk4:
+            nmsg = wx.adv.NotificationMessage(title="GoSync", message="Invalid sync settings detected.\nPlease check the logs.")
+            nmsg.SetFlags(wx.ICON_ERROR)
+            nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+        else:
+            nmsg = wx.NotificationMessage(title="GoSync", message="Invalid sync settings detected.\nPlease check the logs.")
+            nmsg.SetFlags(wx.ICON_ERROR)
+            nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
 
     def OnRecalculateDriveUsage(self, event):
         if self.sync_model.IsCalculatingDriveUsage() == True:
@@ -237,6 +255,14 @@ class GoSyncController(wx.Frame):
         self.sb.SetStatusText(unicode_string.encode('ascii', 'ignore'))
 
     def OnSyncStarted(self, event):
+        if wxgtk4 :
+            nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Started")
+            nmsg.SetFlags(wx.ICON_INFORMATION)
+            nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+        else:
+            nmsg = wx.NotificationMessage(title="GoSync", message="Sync Started")
+            nmsg.SetFlags(wx.ICON_INFORMATION)
+            nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
         self.sb.SetStatusText("Sync started...")
 
     def OnSyncUpdate(self, event):
@@ -245,8 +271,24 @@ class GoSyncController(wx.Frame):
 
     def OnSyncDone(self, event):
         if not event.data:
+            if wxgtk4:
+                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Completed!")
+                nmsg.SetFlags(wx.ICON_INFORMATION)
+                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+            else:
+                nmsg = wx.NotificationMessage(title="GoSync", message="Sync Completed!")
+                nmsg.SetFlags(wx.ICON_INFORMATION)
+                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
             self.sb.SetStatusText("Sync completed.")
         else:
+            if wxgtk4:
+                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Completed with errors!\nPlease check ~/GoSync.log")
+                nmsg.SetFlags(wx.ICON_ERROR)
+                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+            else:
+                nmsg = wx.NotificationMessage(title="GoSync", message="Sync Completed with errors!\nPlease check ~/GoSync.log")
+                nmsg.SetFlags(wx.ICON_ERROR)
+                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
             self.sb.SetStatusText("Sync failed. Please check the logs.")
 
     def OnScanUpdate(self, event):
