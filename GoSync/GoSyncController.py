@@ -203,12 +203,16 @@ class GoSyncController(wx.Frame):
         self.sb.SetStatusText("Usage calculation completed.")
 
     def OnInternetDown(self, event):
-        self.sb.SetStatusText("Network is down")
-        self.sb.SetStatusText("Paused", 1)
-        dial = wx.MessageDialog(None, 'Internet seems to be down. Sync has been paused.\nPlease enable sync after the Internet is reachable.',
-                                'Internet Down', wx.OK | wx.ICON_EXCLAMATION)
-        res = dial.ShowModal()
-        dial.Destroy()
+        if event.data == 1:
+            self.sb.SetStatusText("Network is down")
+            nmsg = wx.adv.NotificationMessage(title="GoSync", message="Network has gone down")
+            nmsg.SetFlags(wx.ICON_INFORMATION)
+            nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+        else:
+            self.sb.SetStatusText("Network is up!")
+            nmsg = wx.adv.NotificationMessage(title="GoSync", message="Network is up!")
+            nmsg.SetFlags(wx.ICON_INFORMATION)
+            nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
 
     def OnSyncInvalidFolder(self, event):
         dial = wx.MessageDialog(None, 'Folder %s is selected for sync. It could not be found on remote server.\nPlease check settings again.\n' % event.data,

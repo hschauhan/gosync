@@ -822,6 +822,7 @@ class GoSyncModel(object):
             return False
 
     def MakeFileListQuery(self, query):
+        retry = 0
         while True:
             try:
                 page_token = None
@@ -856,19 +857,18 @@ class GoSyncModel(object):
                 if not self.IsInternetReachable():
                     self.SendlToLog(1, "MakeFileListQuery - Internet is down\n")
                     raise InternetNotReachable() from HttpError
-            except Exception as e:
-                self.SendlToLog(1, "Exception Error: %d\n" % e.errno)
-                #If connection reset by peer retry
-                if e.errno == 104:
-                    self.SendlToLog(1, "Connection reset by peer. Retrying...\n")
-                    continue
-
+            except:
                 if not self.IsInternetReachable():
                     self.SendlToLog(1, "MakeFileListQuery (unknown except) - Internet is down\n")
                     raise InternetNotReachable() from None
                 else:
-                    self.SendlToLog(1, "MakeFileListQuery (unknown except %d) - Raising FileListQueryFailed", e.errno)
-                    raise FileListQueryFailed() from None
+                    if retry == 0:
+                        self.SendlToLog(1, "MakeFileListQuery - Query failed. Trying one more time.")
+                        retry = 1;
+                        continue
+                    else:
+                        self.SendlToLog(1, "MakeFileListQuery (unknown except %d) - Raising FileListQueryFailed", e.errno)
+                        raise FileListQueryFailed() from None
             break
 
     def TotalFilesInFolder(self, parent='root'):
@@ -1016,8 +1016,13 @@ class GoSyncModel(object):
             if not self.IsInternetReachable():
                 self.SendlToLog(3, "SyncThread - run - Internet is down. Clearing running.")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
-                self.syncRunning.clear()
-                continue
+                while True:
+                    if not self.IsInternetReachable():
+                        time.sleep(5)
+                    else:
+                        self.SendlToLog(3, "SyncThread - run - Internet is up!")
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 0)
+                        break
 
             self.SendlToLog(3, "SyncThread - run - Trying to acquire lock.")
             self.sync_lock.acquire()
@@ -1029,8 +1034,6 @@ class GoSyncModel(object):
                 self.SendlToLog(3, "SyncThread - run - validated")
             except InternetNotReachable:
                 self.SendlToLog(3, "SyncThread - run - Validate sync settings => Internet is down")
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
-                self.syncRunning.clear()
                 self.sync_lock.release()
                 continue
             except FolderNotFound as f:
@@ -1078,7 +1081,6 @@ class GoSyncModel(object):
             except InternetNotReachable:
                 self.SendlToLog(3, "SyncThread - run - Internet not reachable")
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
-                self.syncRunning.clear()
                 self.sync_lock.release()
                 self.syncing_now = False
                 continue
