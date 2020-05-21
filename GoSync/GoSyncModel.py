@@ -43,10 +43,12 @@ try :
 	from .GoSyncDriveTree import GoogleDriveTree
 	from .defines import *
 	from .GoSyncEvents import *
+	from .GoSyncUtils import *
 except (ImportError, ValueError):
 	from GoSyncDriveTree import GoogleDriveTree
 	from defines import *
 	from GoSyncEvents import *
+	from GoSyncUtils import *
 
 class ClientSecretsNotFound(RuntimeError):
     """Client secrets file was not found"""
@@ -111,6 +113,9 @@ class GoSyncModel(object):
         self.syncing_now = False
         self.force_usage_calculation = False
         self.initial_run = True
+        self.can_autostart = True
+        self.auto_start_sync = False
+        self.sync_interval = 1800
 
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
         self.credential_file = os.path.join(self.config_path, "credentials.json")
@@ -135,11 +140,13 @@ class GoSyncModel(object):
 
         self.SendlToLog(3,"Initialize - Started Initialize")
 
+        #Mirror Directory Migration Pending = mdmp
+        self.mdmp = AtomicVariable(0)
+        #New Mirror Directory = nmd
+        self.nmd = AtomicVariable(None)
+        self.SendlToLog(3, "Initialized atomics")
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0o0755)
-
-        if not os.path.exists(self.base_mirror_directory):
-            os.mkdir(self.base_mirror_directory, 0o0755)
 
         if not os.path.exists(self.credential_file):
         #check if Credentials.json file exists
@@ -175,12 +182,6 @@ class GoSyncModel(object):
         self.user_email = self.about_drive['user']['emailAddress']
         self.SendlToLog(3,"Initialize - Completed Account Information Load")
 
-#create subdir linked to active account
-        self.mirror_directory = os.path.join(self.base_mirror_directory, self.user_email)
-        if not os.path.exists(self.mirror_directory):
-            os.mkdir(self.mirror_directory, 0o0755)
-        self.SendlToLog(3,"Initialize - Completed mirror_directory validation")
-
         self.tree_pickle_file = os.path.join(self.config_path, 'gtree-' + self.user_email + '.pick')
 
         if not os.path.exists(self.config_file):
@@ -190,8 +191,21 @@ class GoSyncModel(object):
         try:
             self.LoadConfig()
 
+            if not os.path.exists(self.base_mirror_directory):
+                os.mkdir(self.base_mirror_directory, 0o0755)
+
+            #create subdir linked to active account
+            self.mirror_directory = os.path.join(self.base_mirror_directory, self.user_email)
+            if not os.path.exists(self.mirror_directory):
+                os.mkdir(self.mirror_directory, 0o0755)
+
+            self.SendlToLog(3,"Initialize - Completed mirror_directory validation")
+
+            if not self.sync_selection:
+                self.can_autostart = False
         except:
             raise
+
         self.SendlToLog(3,"Initialize - Completed Config File Load")
 
 
@@ -209,11 +223,14 @@ class GoSyncModel(object):
 
         if not os.path.exists(self.tree_pickle_file):
             self.driveTree = GoogleDriveTree()
+            #Until driveTree is present, GoSync cannot autostart.
+            self.can_autostart = False
         else:
             try:
                 self.driveTree = pickle.load(open(self.tree_pickle_file, "rb"))
             except:
                 self.driveTree = GoogleDriveTree()
+                self.can_autostart = False
         self.SendlToLog(3,"Initialize - Completed GoogleDriveTree File")
         self.SendlToLog(3,"Initialize - Completed Initialize")
 
@@ -229,6 +246,13 @@ class GoSyncModel(object):
                 self.logger.error(LogMsg)
 
     def SetTheBallRolling(self):
+        #if we can autostart and user has selected autostart
+        #then auto start the sync
+        if self.can_autostart and self.auto_start_sync:
+            self.StartSync()
+        else:
+            self.StopSync()
+
         self.sync_thread.start()
         self.usage_calc_thread.start()
         self.observer.start()
@@ -253,8 +277,15 @@ class GoSyncModel(object):
             try:
                 self.config = json.load(f)
                 try:
+                    #Load the base mirror selected by user.
+                    if self.config['BaseMirrorDirectory']:
+                        self.base_mirror_directory = self.config['BaseMirrorDirectory']
                     self.config_dict = self.config[self.user_email]
                     self.sync_selection = self.config_dict['Sync Selection']
+                    if not self.config_dict['AutoStartSync']:
+                        self.auto_start_sync = False
+                    else:
+                        self.auto_start_sync = self.config_dict['AutoStartSync']
                     try:
                         self.drive_usage_dict = self.config_dict['Drive Usage']
                         #self.totalFilesToCheck = self.drive_usage_dict['Total Files']
@@ -278,6 +309,8 @@ class GoSyncModel(object):
     def SaveConfig(self):
         f = open(self.config_file, 'w')
         f.truncate()
+        self.config_dict['AutoStartSync'] = self.auto_start_sync
+        self.config_dict['BaseMirrorDirectory'] = self.base_mirror_directory
         if not self.sync_selection:
             self.config_dict['Sync Selection'] = [['root', '']]
 
@@ -1034,6 +1067,24 @@ class GoSyncModel(object):
 #### run (Sync Local and Remote Directory)
     def run(self):
         while True:
+            if self.mdmp == 1:
+                if self.nmd:
+                    if not os.path.exists(self.nmd):
+                        os.mkdir(self.nmd)
+                    try:
+                        self.SendlToLog(3, "Moving mirror directory: %s to %s" % (self.mirror_directory, self.nmd))
+                        self.sync_lock_acquire()
+                        shutil.move(self.mirror_directory, self.nmd)
+                        self.sync_lock.release()
+                    except:
+                        self.SendlToLog(3, "SyncThread - run - Failed to move mirror directory %s => %s" %
+                                        self.mirror_directory, self.nmd)
+                        self.sync_lock.release()
+                    self.mdmp = 0
+                    self.nmd = None
+                else:
+                    self.SendlToLog(1, "SyncThread - run - Requested to move mirror directory but target missing")
+                        
             self.SendlToLog(3, "SyncThread - run - Waiting for Sync to be enabled")
             self.syncRunning.wait()
 
@@ -1119,7 +1170,7 @@ class GoSyncModel(object):
 #
 #todo to review time to wait
 #Half-an-hour. TODO: It should come from settings?
-            self.time_left = 1800
+            self.time_left = self.sync_interval
 
             while (self.time_left):
                 if not self.syncRunning.is_set():
@@ -1310,6 +1361,31 @@ class GoSyncModel(object):
 
     def GetSyncList(self):
         return copy.deepcopy(self.sync_selection)
+
+    def EnableAutoSync(self):
+        self.auto_start_sync = True
+        self.SaveConfig()
+
+    def DisableAutoSync(self):
+        self.auto_start_sync = False
+        self.SaveConfig()
+
+    def GetAutoSyncState(self):
+        return self.auto_start_sync
+
+    def GetLocalMirrorDirectory(self):
+        return self.mirror_directory
+
+    def SetLocalMirrorDirectory(self, new_directory):
+        self.base_mirror_directory = os.path.join(new_directory, 'Google Drive')
+        self.SaveConfig()            
+
+    def SetSyncInterval(self, new_interval):
+        self.sync_internval = new_interval
+
+    def GetSyncInterval(self):
+        return self.sync_interval
+
 
 class FileModificationNotifyHandler(PatternMatchingEventHandler):
     patterns = ["*"]

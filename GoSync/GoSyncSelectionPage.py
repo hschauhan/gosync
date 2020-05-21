@@ -30,9 +30,9 @@ class GoSyncDriveTree(CT.CustomTreeCtrl):
 
         return checkedItems
 
-class SettingsPage(wx.Panel):
+class SelectionPage(wx.Panel):
     def __init__(self, parent, sync_model):
-        wx.Panel.__init__(self, parent)
+        wx.Panel.__init__(self, parent, style=wx.RAISED_BORDER)
 
         headerFont = wx.Font(11.5, wx.SWISS, wx.NORMAL, wx.NORMAL)
 
@@ -44,6 +44,7 @@ class SettingsPage(wx.Panel):
 
         self.cb = wx.CheckBox(self, -1, 'Sync Everything', (10, 10))
         self.cb.SetValue(True)
+        self.cb.Disable()
         self.dstc.Disable()
         self.cb.Bind(wx.EVT_CHECKBOX, self.SyncSetting)
 
@@ -107,6 +108,7 @@ class SettingsPage(wx.Panel):
 
     def RefreshTree(self, event):
         driveTree = self.sync_model.GetDriveDirectoryTree()
+        self.cb.Enable()
         self.dstc.DeleteAllItems()
         self.dstc_root = self.dstc.AddRoot("Google Drive Root")
         self.MakeDriveTree(driveTree.GetRoot(), self.dstc_root)

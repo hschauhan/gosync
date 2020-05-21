@@ -32,13 +32,15 @@ try :
 	from .defines import *
 	from .DriveUsageBox import DriveUsageBox
 	from .GoSyncEvents import *
+	from .GoSyncSelectionPage import SelectionPage
 	from .GoSyncSettingsPage import SettingsPage
 except (ImportError, ValueError):
 	from GoSyncModel import GoSyncModel, ClientSecretsNotFound
 	from defines import *
 	from DriveUsageBox import DriveUsageBox
 	from GoSyncEvents import *
-	from GoSyncSettingsPage import SettingsPage
+	from GoSyncSelectionPage import SelectionPage
+	from GoSyncSettingPage import SettingsPage
 
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()
@@ -49,7 +51,7 @@ HERE=os.path.abspath(os.path.dirname(__file__))
 
 class PageAccount(wx.Panel):
     def __init__(self, parent, sync_model):
-        wx.Panel.__init__(self, parent, size=parent.GetSize())
+        wx.Panel.__init__(self, parent, size=parent.GetSize(), style=wx.RAISED_BORDER)
 
         self.sync_model = sync_model
         self.totalFiles = 0
@@ -67,7 +69,7 @@ class PageAccount(wx.Panel):
 
 
         mainsizer = wx.BoxSizer(wx.VERTICAL)
-
+        mainsizer.AddSpacer(10)
         self.SetSizerAndFit(mainsizer)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
@@ -159,11 +161,13 @@ class GoSyncController(wx.Frame):
 
         # create the page windows as children of the notebook
         accountPage = PageAccount(nb, self.sync_model)
-        settingsPage = SettingsPage(nb, self.sync_model)
+        selectionPage = SelectionPage(nb, self.sync_model)
+        settingPage = SettingsPage(nb, self.sync_model)
 
         # add the pages to the notebook with the label to show on the tab
         nb.AddPage(accountPage, "Account")
-        nb.AddPage(settingsPage, "Settings")
+        nb.AddPage(selectionPage, "What to sync?")
+        nb.AddPage(settingPage, "Settings")
 
         # finally, put the notebook in a sizer for the panel to manage
         # the layout
