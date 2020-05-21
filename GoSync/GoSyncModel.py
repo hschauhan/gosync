@@ -917,6 +917,12 @@ class GoSyncModel(object):
                 self.SendlToLog(2,"DownloadFileByObject: Skipping File (%s) - Local and Remote - Same Name but Different Content.\n" % abs_filepath)
         else:
             self.SendlToLog(3,'DownloadFileByObject: Download Started - File (%s)' % abs_filepath)
+            self.SendlToLog(3,'DownloadFileByObject: Download Started - File size (%s)' % file_obj['size'])
+            if (file_obj['size'] == '0') :
+                open(abs_filepath, 'a').close()
+                self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
+                return
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
             GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
                                               {'Downloading %s' % fd})
@@ -945,6 +951,7 @@ class GoSyncModel(object):
                 except:
                     print(er)
                     raise
+
 
 
 #### SyncRemoteDirectory
