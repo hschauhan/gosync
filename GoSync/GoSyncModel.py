@@ -116,6 +116,8 @@ class GoSyncModel(object):
         self.can_autostart = True
         self.auto_start_sync = False
         self.sync_interval = 1800
+        self.shutting_down = False
+        self.use_system_notif = True
 
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
         self.credential_file = os.path.join(self.config_path, "credentials.json")
@@ -140,11 +142,6 @@ class GoSyncModel(object):
 
         self.SendlToLog(3,"Initialize - Started Initialize")
 
-        #Mirror Directory Migration Pending = mdmp
-        self.mdmp = AtomicVariable(0)
-        #New Mirror Directory = nmd
-        self.nmd = AtomicVariable(None)
-        self.SendlToLog(3, "Initialized atomics")
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0o0755)
 
@@ -190,7 +187,7 @@ class GoSyncModel(object):
 #todo : add default config logic in method
         try:
             self.LoadConfig()
-
+            self.SendlToLog(3,"Initialize - Read %s as base mirror" % self.base_mirror_directory)
             if not os.path.exists(self.base_mirror_directory):
                 os.mkdir(self.base_mirror_directory, 0o0755)
 
@@ -200,7 +197,7 @@ class GoSyncModel(object):
                 os.mkdir(self.mirror_directory, 0o0755)
 
             self.SendlToLog(3,"Initialize - Completed mirror_directory validation")
-
+            self.SendlToLog(3,"Initialize - Mirror Directory: %s" % self.mirror_directory)
             if not self.sync_selection:
                 self.can_autostart = False
         except:
@@ -257,6 +254,15 @@ class GoSyncModel(object):
         self.usage_calc_thread.start()
         self.observer.start()
 
+    def StopTheShow(self):
+        self.shutting_down = True
+        self.observer.unschedule_all()
+        # Wakeup the threads if they are sleeping
+        # so that they can exit
+        self.usageCalculateEvent.set()
+        self.sync_thread.join()
+        self.usage_calc_thread.join()
+
     def IsUserLoggedIn(self):
         return self.is_logged_in
 
@@ -277,10 +283,17 @@ class GoSyncModel(object):
             try:
                 self.config = json.load(f)
                 try:
-                    #Load the base mirror selected by user.
-                    if self.config['BaseMirrorDirectory']:
-                        self.base_mirror_directory = self.config['BaseMirrorDirectory']
                     self.config_dict = self.config[self.user_email]
+                    if self.config_dict['SyncInterval']:
+                        self.sync_interval = self.config_dict['SyncInterval']
+                        if self.sync_interval < 30 or self.sync_interval > (24*60*60):
+                            self.sync_interval = 1800
+
+                    #Load the base mirror selected by user.
+                    if self.config_dict['BaseMirrorDirectory']:
+                        self.base_mirror_directory = self.config_dict['BaseMirrorDirectory']
+                        self.SendlToLog(3, "Initialize - Base Mirror: %s" % self.base_mirror_directory)
+
                     self.sync_selection = self.config_dict['Sync Selection']
                     if not self.config_dict['AutoStartSync']:
                         self.auto_start_sync = False
@@ -295,6 +308,11 @@ class GoSyncModel(object):
                         self.driveDocumentUsage = self.drive_usage_dict['Document Size']
                         self.drivePhotoUsage = self.drive_usage_dict['Photo Size']
                         self.driveOthersUsage = self.drive_usage_dict['Others Size']
+
+                        # TODO: This isn't right place for UI components
+                        self.use_system_notif = self.config_dict['UseSystemNotif']
+                        if not self.use_system_notif:
+                            self.use_system_notif = True
                     except:
                         pass
                 except:
@@ -311,6 +329,7 @@ class GoSyncModel(object):
         f.truncate()
         self.config_dict['AutoStartSync'] = self.auto_start_sync
         self.config_dict['BaseMirrorDirectory'] = self.base_mirror_directory
+        self.config_dict['SyncInterval'] = self.sync_interval
         if not self.sync_selection:
             self.config_dict['Sync Selection'] = [['root', '']]
 
@@ -779,7 +798,7 @@ class GoSyncModel(object):
 
 #### SyncLocalDirectory
     def SyncLocalDirectory(self):
-        if not self.syncRunning.is_set():
+        if not self.syncRunning.is_set() or self.shutting_down:
             self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
             return
 
@@ -787,7 +806,7 @@ class GoSyncModel(object):
         for root, dirs, files in os.walk(self.mirror_directory):
             for names in files:
                 while True:
-                    if not self.syncRunning.is_set():
+                    if not self.syncRunning.is_set() or self.shutting_down:
                         self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
                         return
 
@@ -824,7 +843,7 @@ class GoSyncModel(object):
                             self.UploadFile(dirpath)
 
             for names in dirs:
-                if not self.syncRunning.is_set():
+                if not self.syncRunning.is_set() or self.shutting_down:
                     self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
                     return
 
@@ -899,11 +918,11 @@ class GoSyncModel(object):
 
                 if not self.IsInternetReachable():
                     self.SendlToLog(1, "MakeFileListQuery - Internet is down\n")
-                    raise InternetNotReachable() from HttpError
+                    raise InternetNotReachable()
             except:
                 if not self.IsInternetReachable():
                     self.SendlToLog(1, "MakeFileListQuery (unknown except) - Internet is down\n")
-                    raise InternetNotReachable() from None
+                    raise InternetNotReachable()
                 else:
                     if retry == 0:
                         self.SendlToLog(1, "MakeFileListQuery - Query failed. Trying one more time.")
@@ -911,7 +930,7 @@ class GoSyncModel(object):
                         continue
                     else:
                         self.SendlToLog(1, "MakeFileListQuery (unknown except %d) - Raising FileListQueryFailed", e.errno)
-                        raise FileListQueryFailed() from None
+                        raise FileListQueryFailed()
             break
 
     def TotalFilesInFolder(self, parent='root'):
@@ -983,7 +1002,7 @@ class GoSyncModel(object):
 #### SyncRemoteDirectory
     def SyncRemoteDirectory(self, parent, pwd, recursive=True):
         self.SendlToLog(2,"### SyncRemoteDirectory: - Sync Started - Remote Directory (%s) ... Recursive = %s\n" % (pwd, recursive))
-        if not self.syncRunning.is_set():
+        if not self.syncRunning.is_set() or self.shutting_down:
             self.SendlToLog(3,"SyncRemoteDirectory: Sync has been paused. Aborting.\n")
             return
 
@@ -991,6 +1010,10 @@ class GoSyncModel(object):
             os.makedirs(os.path.join(self.mirror_directory, pwd))
 
         try:
+            if not self.syncRunning.is_set() or self.shutting_down:
+                self.SendlToLog(3, "SyncRemoteDirectory: Sync has been paused. Aborting.")
+                return
+
             file_list = self.MakeFileListQuery("'%s' in parents and trashed=false" % parent)
 
             #This direcotry is empty nothing to sync.
@@ -998,6 +1021,10 @@ class GoSyncModel(object):
                 return
 
             for f in file_list:
+                if not self.syncRunning.is_set() or self.shutting_down:
+                    self.SendlToLog(3,"SyncRemoteDirectory: Sync has been paused. Aborting.\n")
+                    return
+
                 self.SendlToLog(3, "Checking: %s\n" % f['name'])
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Checking: %s" % f['name']})
                 if not self.syncRunning.is_set():
@@ -1030,10 +1057,14 @@ class GoSyncModel(object):
                                 else:
                                     time.sleep(5)
                                     continue
-                    if not self.syncRunning.is_set():
+                    if not self.syncRunning.is_set() or self.shutting_down:
                         self.SendlToLog(3,"SyncRemoteDirectory: Sync has been paused. Aborting.\n")
                         return
                 else:
+                    if not self.syncRunning.is_set() or self.shutting_down:
+                        self.SendlToLog(3, "SyncRemoteDirectory: Sync has been paused. Aborting download")
+                        return
+
                     self.SendlToLog(3,"SyncRemoteDirectory: Checking file (%s)" % f['name'])
                     if not self.IsGoogleDocument(f):
                         self.DownloadFileByObject(f, os.path.join(self.mirror_directory, pwd))
@@ -1066,27 +1097,13 @@ class GoSyncModel(object):
 
 #### run (Sync Local and Remote Directory)
     def run(self):
-        while True:
-            if self.mdmp == 1:
-                if self.nmd:
-                    if not os.path.exists(self.nmd):
-                        os.mkdir(self.nmd)
-                    try:
-                        self.SendlToLog(3, "Moving mirror directory: %s to %s" % (self.mirror_directory, self.nmd))
-                        self.sync_lock_acquire()
-                        shutil.move(self.mirror_directory, self.nmd)
-                        self.sync_lock.release()
-                    except:
-                        self.SendlToLog(3, "SyncThread - run - Failed to move mirror directory %s => %s" %
-                                        self.mirror_directory, self.nmd)
-                        self.sync_lock.release()
-                    self.mdmp = 0
-                    self.nmd = None
-                else:
-                    self.SendlToLog(1, "SyncThread - run - Requested to move mirror directory but target missing")
-                        
+        while not self.shutting_down:
             self.SendlToLog(3, "SyncThread - run - Waiting for Sync to be enabled")
             self.syncRunning.wait()
+
+            if self.shutting_down:
+                self.SendToLog(2, "SyncThread - run - GoSync is shutting down!")
+                break
 
             if not self.IsInternetReachable():
                 self.SendlToLog(3, "SyncThread - run - Internet is down. Clearing running.")
@@ -1180,6 +1197,9 @@ class GoSyncModel(object):
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
                                                       {'Sync starts in %02dm:%02ds' % ((self.time_left/60), (self.time_left % 60))})
                 self.time_left -= 1
+                if self.shutting_down:
+                    self.SendlToLog(2, "SyncThread - run - GoSync is shutting down!")
+                    break
                 self.syncRunning.wait()
                 time.sleep(1)
 
@@ -1197,6 +1217,10 @@ class GoSyncModel(object):
 #### calculateUsageOfFolder
     def calculateUsageOfFolder(self, folder_id):
         try:
+            if self.shutting_down:
+                self.SendlToLog(3, "calculateUsageOfFolder: GoSync is shutting down!")
+                return
+
             file_list = self.MakeFileListQuery("'%s' in parents and trashed=false" % folder_id)
 
             #Folder is empty
@@ -1204,6 +1228,10 @@ class GoSyncModel(object):
                 return
 
             for f in file_list:
+                if self.shutting_down:
+                    self.SendlToLog(3, "calculateUsageOfFolder: GoSync is shutting down!")
+                    return
+
                 self.fcount += 1
                 self.SendlToLog(3, "Scanning: %s (%s -> %s)\n" % (f['name'], f['id'], folder_id))
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SCAN_UPDATE, {'Scanning Folder: %s' % f['name']})
@@ -1229,9 +1257,13 @@ class GoSyncModel(object):
 
 #### calculateUsage
     def calculateUsage(self):
-        while True:
+        while not self.shutting_down:
             self.usageCalculateEvent.wait()
             self.usageCalculateEvent.clear()
+
+            if self.shutting_down:
+                self.SendlToLog(2, "calculateUsage - GoSync is shutting down!")
+                break
 
             self.sync_lock.acquire()
             self.SendlToLog(3,"CalculateUsage: SyncLock acquired")
@@ -1345,6 +1377,9 @@ class GoSyncModel(object):
             self.config_dict['Sync Selection'] = self.sync_selection
             self.SaveConfig()
 
+    def ClearSyncSelection(self):
+        self.sync_selection = [['root', '']]
+
     def SetSyncSelection(self, folder):
         if folder == 'root':
             self.sync_selection = [['root', '']]
@@ -1381,10 +1416,17 @@ class GoSyncModel(object):
         self.SaveConfig()            
 
     def SetSyncInterval(self, new_interval):
-        self.sync_internval = new_interval
+        self.sync_interval = new_interval
+        self.SaveConfig()
 
     def GetSyncInterval(self):
         return self.sync_interval
+
+    def GetUseSystemNotifSetting(self):
+        return self.use_system_notif
+
+    def SetUseSystemNotifSetting(self, new):
+        self.use_system_notif = new
 
 
 class FileModificationNotifyHandler(PatternMatchingEventHandler):
