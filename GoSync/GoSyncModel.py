@@ -311,7 +311,7 @@ class GoSyncModel(object):
 
                         # TODO: This isn't right place for UI components
                         self.use_system_notif = self.config_dict['UseSystemNotif']
-                        if not self.use_system_notif:
+                        if self.use_system_notif is None:
                             self.use_system_notif = True
                     except:
                         pass
@@ -330,6 +330,7 @@ class GoSyncModel(object):
         self.config_dict['AutoStartSync'] = self.auto_start_sync
         self.config_dict['BaseMirrorDirectory'] = self.base_mirror_directory
         self.config_dict['SyncInterval'] = self.sync_interval
+        self.config_dict['UseSystemNotif'] = self.use_system_notif
         if not self.sync_selection:
             self.config_dict['Sync Selection'] = [['root', '']]
 
@@ -1427,6 +1428,7 @@ class GoSyncModel(object):
 
     def SetUseSystemNotifSetting(self, new):
         self.use_system_notif = new
+        self.SaveConfig()
 
 
 class FileModificationNotifyHandler(PatternMatchingEventHandler):

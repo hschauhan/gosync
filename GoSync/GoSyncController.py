@@ -188,6 +188,7 @@ class GoSyncController(wx.Frame):
             self.sb.SetStatusText("")
             self.sb.SetStatusText("Paused", 1)
             self.pr_item.SetItemLabel("Resume Sync")
+            self.sync_now_mitem.Enable(False)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_STARTED,
                                           self.OnSyncStarted)
@@ -217,7 +218,10 @@ class GoSyncController(wx.Frame):
 
     def OnUsageCalculationDone(self, event):
         self.pr_item.Enable(True)
-        self.sync_now_mitem.Enable(True)
+        if self.sync_model.IsSyncEnabled():
+            self.sync_now_mitem.Enable(True)
+        else:
+            self.sync_now_mitem.Enable(False)
         self.rcu.Enable(True)
         self.sb.SetStatusText("Usage calculation completed.")
 
