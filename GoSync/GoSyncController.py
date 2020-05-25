@@ -32,13 +32,15 @@ try :
 	from .defines import *
 	from .DriveUsageBox import DriveUsageBox
 	from .GoSyncEvents import *
+	from .GoSyncSelectionPage import SelectionPage
 	from .GoSyncSettingsPage import SettingsPage
 except (ImportError, ValueError):
 	from GoSyncModel import GoSyncModel, ClientSecretsNotFound
 	from defines import *
 	from DriveUsageBox import DriveUsageBox
 	from GoSyncEvents import *
-	from GoSyncSettingsPage import SettingsPage
+	from GoSyncSelectionPage import SelectionPage
+	from GoSyncSettingPage import SettingsPage
 
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()
@@ -49,7 +51,7 @@ HERE=os.path.abspath(os.path.dirname(__file__))
 
 class PageAccount(wx.Panel):
     def __init__(self, parent, sync_model):
-        wx.Panel.__init__(self, parent, size=parent.GetSize())
+        wx.Panel.__init__(self, parent, size=parent.GetSize(), style=wx.RAISED_BORDER)
 
         self.sync_model = sync_model
         self.totalFiles = 0
@@ -67,7 +69,7 @@ class PageAccount(wx.Panel):
 
 
         mainsizer = wx.BoxSizer(wx.VERTICAL)
-
+        mainsizer.AddSpacer(10)
         self.SetSizerAndFit(mainsizer)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
@@ -105,7 +107,7 @@ class PageAccount(wx.Panel):
 
 class GoSyncController(wx.Frame):
     def __init__(self):
-        wx.Frame.__init__(self, None, title="GoSync", size=(520,400), style=mainWindowStyle)
+        wx.Frame.__init__(self, None, title="GoSync", size=(490,500), style=mainWindowStyle)
 
         try:
             self.sync_model = GoSyncModel()
@@ -141,9 +143,12 @@ class GoSyncController(wx.Frame):
 
         menu_txt = 'Pause/Resume Sync'
 
-        self.CreateMenuItem(menu, menu_txt, self.OnToggleSync, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
-        self.CreateMenuItem(menu, 'Sync Now!', self.OnSyncNow, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
-        self.CreateMenuItem(menu, 'Recalculate Drive Usage', self.OnRecalculateDriveUsage, icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_RECALC_USAGE)
+        self.pr_item = self.CreateMenuItem(menu, menu_txt, self.OnToggleSync,
+                                           icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_TOGGLE)
+        self.sync_now_mitem = self.CreateMenuItem(menu, 'Sync Now!', self.OnSyncNow,
+                                                  icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
+        self.rcu = self.CreateMenuItem(menu, 'Recalculate Drive Usage', self.OnRecalculateDriveUsage,
+                                       icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_RECALC_USAGE)
 
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
@@ -159,11 +164,13 @@ class GoSyncController(wx.Frame):
 
         # create the page windows as children of the notebook
         accountPage = PageAccount(nb, self.sync_model)
-        settingsPage = SettingsPage(nb, self.sync_model)
+        selectionPage = SelectionPage(nb, self.sync_model)
+        settingPage = SettingsPage(nb, self.sync_model)
 
         # add the pages to the notebook with the label to show on the tab
         nb.AddPage(accountPage, "Account")
-        nb.AddPage(settingsPage, "Settings")
+        nb.AddPage(selectionPage, "What to sync?")
+        nb.AddPage(settingPage, "Settings")
 
         # finally, put the notebook in a sizer for the panel to manage
         # the layout
@@ -176,9 +183,11 @@ class GoSyncController(wx.Frame):
 
         if self.sync_model.IsSyncEnabled():
             self.sb.SetStatusText("Running", 1)
+            self.pr_item.SetItemLabel("Pause Sync")
         else:
             self.sb.SetStatusText("")
             self.sb.SetStatusText("Paused", 1)
+            self.pr_item.SetItemLabel("Resume Sync")
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_STARTED,
                                           self.OnSyncStarted)
@@ -196,43 +205,60 @@ class GoSyncController(wx.Frame):
                                           self.OnScanUpdate)
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
                                           self.OnUsageCalculationDone)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
+                                          self.OnUsageCalculationStarted)
 
         self.sync_model.SetTheBallRolling()
 
+    def OnUsageCalculationStarted(self, event):
+        self.pr_item.Enable(False)
+        self.sync_now_mitem.Enable(False)
+        self.rcu.Enable(False)
+
     def OnUsageCalculationDone(self, event):
+        self.pr_item.Enable(True)
+        if self.sync_model.IsSyncEnabled():
+            self.sync_now_mitem.Enable(True)
+        else:
+            self.sync_now_mitem.Enable(False)
+        self.rcu.Enable(True)
         self.sb.SetStatusText("Usage calculation completed.")
 
     def OnInternetDown(self, event):
         if event.data == 1:
             self.sb.SetStatusText("Network is down")
-            if wxgtk4:
-                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Network has gone down!")
-                nmsg.SetFlags(wx.ICON_WARNING)
-                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
-            else:
-                nmsg = wx.NotificationMessage(title="GoSync", message="Network has gone down!")
-                nmsg.SetFlags(wx.ICON_WARNING)
-                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
+            if self.sync_model.GetUseSystemNotifSetting():
+                if wxgtk4:
+                    nmsg = wx.adv.NotificationMessage(title="GoSync", message="Network has gone down!")
+                    nmsg.SetFlags(wx.ICON_WARNING)
+                    nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+                else:
+                    nmsg = wx.NotificationMessage("GoSync", "Network has gone down!")
+                    nmsg.SetFlags(wx.ICON_WARNING)
+                    nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
         else:
             self.sb.SetStatusText("Network is up!")
-            if wxgtk4:
-                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Network is up!")
-                nmsg.SetFlags(wx.ICON_INFORMATION)
-                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
-            else:
-                nmsg = wx.NotificationMessage(title="GoSync", message="Network is up!")
-                nmsg.SetFlags(wx.ICON_INFORMATION)
-                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
+            if self.sync_model.GetUseSystemNotifSetting():
+                if wxgtk4:
+                    nmsg = wx.adv.NotificationMessage(title="GoSync", message="Network is up!")
+                    nmsg.SetFlags(wx.ICON_INFORMATION)
+                    nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+                else:
+                    nmsg = wx.NotificationMessage("GoSync", "Network is up!")
+                    nmsg.SetFlags(wx.ICON_INFORMATION)
+                    nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
 
     def OnSyncInvalidFolder(self, event):
-        if wxgtk4:
-            nmsg = wx.adv.NotificationMessage(title="GoSync", message="Invalid sync settings detected.\nPlease check the logs.")
-            nmsg.SetFlags(wx.ICON_ERROR)
-            nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
-        else:
-            nmsg = wx.NotificationMessage(title="GoSync", message="Invalid sync settings detected.\nPlease check the logs.")
-            nmsg.SetFlags(wx.ICON_ERROR)
-            nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
+        if self.sync_model.GetUseSystemNotifSetting():
+            if wxgtk4:
+                nmsg = wx.adv.NotificationMessage(title="GoSync",
+                                                  message="Invalid sync settings detected.\nPlease check the logs.")
+                nmsg.SetFlags(wx.ICON_ERROR)
+                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+            else:
+                nmsg = wx.NotificationMessage("GoSync", "Invalid sync settings detected.\nPlease check the logs.")
+                nmsg.SetFlags(wx.ICON_ERROR)
+                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
 
     def OnRecalculateDriveUsage(self, event):
         if self.sync_model.IsCalculatingDriveUsage() == True:
@@ -255,15 +281,21 @@ class GoSyncController(wx.Frame):
         self.sb.SetStatusText(unicode_string.encode('ascii', 'ignore'))
 
     def OnSyncStarted(self, event):
-        if wxgtk4 :
-            nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Started")
-            nmsg.SetFlags(wx.ICON_INFORMATION)
-            nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
-        else:
-            nmsg = wx.NotificationMessage(title="GoSync", message="Sync Started")
-            nmsg.SetFlags(wx.ICON_INFORMATION)
-            nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
+        if self.sync_model.GetUseSystemNotifSetting():
+            if wxgtk4 :
+                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Started")
+                nmsg.SetFlags(wx.ICON_INFORMATION)
+                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+            else:
+                nmsg = wx.NotificationMessage("GoSync", "Sync Started")
+                nmsg.SetFlags(wx.ICON_INFORMATION)
+                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
+
         self.sb.SetStatusText("Sync started...")
+        self.sb.SetStatusText("Running", 1)
+        self.sync_now_mitem.Enable(False)
+        self.rcu.Enable(False)
+        self.pr_item.SetItemLabel("Pause Sync")
 
     def OnSyncUpdate(self, event):
         unicode_string = event.data.pop()
@@ -271,25 +303,29 @@ class GoSyncController(wx.Frame):
 
     def OnSyncDone(self, event):
         if not event.data:
-            if wxgtk4:
-                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Completed!")
-                nmsg.SetFlags(wx.ICON_INFORMATION)
-                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
-            else:
-                nmsg = wx.NotificationMessage(title="GoSync", message="Sync Completed!")
-                nmsg.SetFlags(wx.ICON_INFORMATION)
-                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
+            if self.sync_model.GetUseSystemNotifSetting():
+                if wxgtk4:
+                    nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Completed!")
+                    nmsg.SetFlags(wx.ICON_INFORMATION)
+                    nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+                else:
+                    nmsg = wx.NotificationMessage("GoSync", "Sync Completed!")
+                    nmsg.SetFlags(wx.ICON_INFORMATION)
+                    nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
             self.sb.SetStatusText("Sync completed.")
         else:
-            if wxgtk4:
-                nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Completed with errors!\nPlease check ~/GoSync.log")
-                nmsg.SetFlags(wx.ICON_ERROR)
-                nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
-            else:
-                nmsg = wx.NotificationMessage(title="GoSync", message="Sync Completed with errors!\nPlease check ~/GoSync.log")
-                nmsg.SetFlags(wx.ICON_ERROR)
-                nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
+            if self.sync_model.GetUseSystemNotifSetting():
+                if wxgtk4:
+                    nmsg = wx.adv.NotificationMessage(title="GoSync", message="Sync Completed with errors!\nPlease check ~/GoSync.log")
+                    nmsg.SetFlags(wx.ICON_ERROR)
+                    nmsg.Show(timeout=wx.adv.NotificationMessage.Timeout_Auto)
+                else:
+                    nmsg = wx.NotificationMessage("GoSync", "Sync Completed with errors!\nPlease check ~/GoSync.log")
+                    nmsg.SetFlags(wx.ICON_ERROR)
+                    nmsg.Show(timeout=wx.NotificationMessage.Timeout_Auto)
             self.sb.SetStatusText("Sync failed. Please check the logs.")
+        self.sync_now_mitem.Enable(True)
+        self.rcu.Enable(True)
 
     def OnScanUpdate(self, event):
         unicode_string = event.data.pop()
@@ -328,9 +364,10 @@ class GoSyncController(wx.Frame):
                                 'Question', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION)
         res = dial.ShowModal()
         if res == wx.ID_YES:
-            if self.sync_model.IsSyncEnabled():
-                self.sync_model.StopSync()
-                self.sb.SetStatusText("Paused", 1)                
+            if self.sync_model.IsSyncEnabled() or self.sync_model.IsSyncRunning():
+                self.sync_model.StopTheShow()
+                self.sb.SetStatusText("Paused", 1)
+
             wx.CallAfter(self.Destroy)
 
     def OnToggleSync(self, evt):
@@ -338,9 +375,13 @@ class GoSyncController(wx.Frame):
             self.sync_model.StopSync()
             self.sb.SetStatusText("Sync is paused")
             self.sb.SetStatusText("Paused", 1)
+            self.pr_item.SetItemLabel("Resume Sync")
+            self.sync_now_mitem.Enable(False)
         else:
             self.sync_model.StartSync()
             self.sb.SetStatusText("Running", 1)
+            self.pr_item.SetItemLabel("Pause Sync")
+            self.sync_now_mitem.Enable(True)
 
     def OnSyncNow(self, evt):
         self.sync_model.time_left=1

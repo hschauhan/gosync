@@ -30,20 +30,21 @@ class GoSyncDriveTree(CT.CustomTreeCtrl):
 
         return checkedItems
 
-class SettingsPage(wx.Panel):
+class SelectionPage(wx.Panel):
     def __init__(self, parent, sync_model):
-        wx.Panel.__init__(self, parent)
+        wx.Panel.__init__(self, parent, style=wx.RAISED_BORDER)
 
         headerFont = wx.Font(11.5, wx.SWISS, wx.NORMAL, wx.NORMAL)
 
         self.sync_model = sync_model
         self.dstc = GoSyncDriveTree(self, pos=(0,0))
 
-        t1 = wx.StaticText(self, -1, "Choose the directories to sync:\n", pos=(0,0))
-        t1.SetFont(headerFont)
+        self.t1 = wx.StaticText(self, -1, "Choose the directories to sync:", pos=(0,0))
+        self.t1.SetFont(headerFont)
 
         self.cb = wx.CheckBox(self, -1, 'Sync Everything', (10, 10))
         self.cb.SetValue(True)
+        self.cb.Disable()
         self.dstc.Disable()
         self.cb.Bind(wx.EVT_CHECKBOX, self.SyncSetting)
 
@@ -51,14 +52,21 @@ class SettingsPage(wx.Panel):
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_DONE,
                                           self.RefreshTree)
-        #wx.EVT_CHECKBOX(self, self.cb.GetId(), self.SyncSetting)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_CALCULATE_USAGE_STARTED,
+                                          self.OnUsageCalculationStarted)
+
         self.cb.Bind(wx.EVT_CHECKBOX, self.SyncSetting)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(t1, 0, wx.ALL)
+        sizer.Add(self.t1, 0, wx.ALL)
         sizer.Add(self.cb, 0, wx.ALL)
-        sizer.Add(self.dstc, 1, wx.EXPAND)
+        sizer.Add(self.dstc, 1, wx.EXPAND,2)
         self.SetSizer(sizer)
+
+    def OnUsageCalculationStarted(self, event):
+        self.cb.Disable()
+        self.dstc.Disable()
+        self.t1.SetLabel("Scanning Google Drive to create directory tree. Please Wait...")
 
     def SyncSetting(self, event):
         if self.cb.GetValue():
@@ -72,11 +80,18 @@ class SettingsPage(wx.Panel):
                 self.sync_model.SetSyncSelection(folder)
 
     def ItemChecked(self, event):
-        folder = self.dstc.GetPyData(event.GetItem())
-        if event.GetItem().IsChecked():
+        self.dstc.AutoCheckChild(event.GetItem(), event.GetItem().IsChecked())
+        checkedItems = self.dstc.GetCheckedItems()
+        self.sync_model.ClearSyncSelection()
+        for item in checkedItems:
+            folder = self.dstc.GetPyData(item)
             self.sync_model.SetSyncSelection(folder)
-        else:
-            self.sync_model.RemoveSyncSelection(folder)
+
+        #folder = self.dstc.GetPyData(event.GetItem())
+        #if event.GetItem().IsChecked():
+        #    self.sync_model.SetSyncSelection(folder)
+        #else:
+        #    self.sync_model.RemoveSyncSelection(folder)
 
     def MakeDriveTree(self, gnode, tnode):
         file_list = gnode.GetChildren()
@@ -106,22 +121,30 @@ class SettingsPage(wx.Panel):
         return itemToBeChecked
 
     def RefreshTree(self, event):
+        self.Bind(CT.EVT_TREE_ITEM_CHECKED, None)
         driveTree = self.sync_model.GetDriveDirectoryTree()
+        self.t1.SetLabel("Choose the directories to sync:")
+        self.cb.Enable()
         self.dstc.DeleteAllItems()
         self.dstc_root = self.dstc.AddRoot("Google Drive Root")
         self.MakeDriveTree(driveTree.GetRoot(), self.dstc_root)
-        #self.dstc.ExpandAll()
+        self.dstc.Expand(self.dstc_root)
         sync_list = self.sync_model.GetSyncList()
         for d in sync_list:
             if d[0] == 'root':
                 self.cb.SetValue(True)
                 self.dstc.Disable()
+                self.Bind(CT.EVT_TREE_ITEM_CHECKED, self.ItemChecked)
                 return
             else:
                 self.cb.SetValue(False)
                 self.dstc.Enable()
+                self.dstc.SetFocus()
                 #break
 
         item_list = self.GetItemsToBeChecked(sync_list)
         for item in item_list:
             self.dstc.CheckItem(item)
+            self.dstc.Expand(item)
+        self.Bind(CT.EVT_TREE_ITEM_CHECKED, self.ItemChecked)
+
