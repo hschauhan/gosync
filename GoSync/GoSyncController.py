@@ -188,7 +188,6 @@ class GoSyncController(wx.Frame):
             self.sb.SetStatusText("")
             self.sb.SetStatusText("Paused", 1)
             self.pr_item.SetItemLabel("Resume Sync")
-            self.sync_now_mitem.Enable(False)
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_STARTED,
                                           self.OnSyncStarted)
@@ -377,10 +376,12 @@ class GoSyncController(wx.Frame):
             self.sb.SetStatusText("Sync is paused")
             self.sb.SetStatusText("Paused", 1)
             self.pr_item.SetItemLabel("Resume Sync")
+            self.sync_now_mitem.Enable(False)
         else:
             self.sync_model.StartSync()
             self.sb.SetStatusText("Running", 1)
             self.pr_item.SetItemLabel("Pause Sync")
+            self.sync_now_mitem.Enable(True)
 
     def OnSyncNow(self, evt):
         self.sync_model.time_left=1

@@ -15,7 +15,7 @@ class SettingsPage(wx.Panel):
     def __init__(self, parent, sync_model):
         wx.Panel.__init__(self, parent, style=wx.RAISED_BORDER)
 
-        headerFont = wx.Font(11.5, wx.SWISS, wx.NORMAL, wx.FONTWEIGHT_NORMAL)
+        headerFont = wx.Font(8, wx.DEFAULT, wx.NORMAL, wx.FONTWEIGHT_BOLD)
 
         self.sync_model = sync_model
 
@@ -25,6 +25,10 @@ class SettingsPage(wx.Panel):
         self.notif_cb.SetValue(True)
         self.cb.Bind(wx.EVT_CHECKBOX, self.AutoSyncSetting)
         self.notif_cb.Bind(wx.EVT_CHECKBOX, self.OnUseSystemNotif)
+        self.log_choice = wx.Choice(self, -1, choices=["Error", "Information", "Debuging"], name="LevelChoice")
+        self.log_choice.SetSelection(self.sync_model.GetLogLevel()-1)
+        self.lct = wx.StaticText(self, -1, "Debug Level: ")
+        self.log_choice.Bind(wx.EVT_CHOICE, self.OnDebugLogChoice)
 
         self.md = wx.StaticText(self, -1, self.sync_model.GetLocalMirrorDirectory(), pos=(0,0))
         self.md.SetFont(headerFont)
@@ -47,22 +51,29 @@ class SettingsPage(wx.Panel):
             c = wx.StaticBox(self, -1, "Other Settings")
             osizer = wx.StaticBoxSizer(c, wx.VERTICAL)
 
+        debug_sizer = wx.BoxSizer(wx.HORIZONTAL)
         button_sizer = wx.BoxSizer(wx.HORIZONTAL)
         si_spin_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
-        si_spin_sizer.Add(self.si_spin_text, 0, wx.ALL, 1)
-        si_spin_sizer.Add(self.si_spin_btn, 1, wx.ALL)
+        si_spin_sizer.Add(self.si_spin_text, 0, wx.ALL | wx.ALIGN_CENTER)
+        si_spin_sizer.Add(self.si_spin_btn, 1, wx.ALL|wx.ALIGN_CENTER)
+
+        debug_sizer.Add(self.lct, 0, wx.ALL|wx.ALIGN_CENTER)
+        debug_sizer.AddSpacer(80)
+        debug_sizer.Add(self.log_choice, 1, wx.ALL|wx.ALIGN_CENTER)
 
         button_sizer.Add(self.md_button, 1, wx.ALL|wx.ALIGN_CENTER, border=5)
         button_sizer.Add(self.show_button, 2, wx.ALL|wx.ALIGN_CENTER)
 
-        ssizer.Add(self.md, 0, wx.ALL, border=10)
+        ssizer.Add(self.md, 0, wx.ALL|wx.ALIGN_CENTER, border=10)
         ssizer.AddSpacer(10)
         ssizer.Add(button_sizer, 1, wx.ALL|wx.ALIGN_CENTER)
 
         osizer.Add(self.cb, 0, wx.ALL, 0)
         osizer.Add(self.notif_cb, 1, wx.ALL, 0)
         osizer.Add(si_spin_sizer, 2, wx.ALL, 0)
+        osizer.Add(debug_sizer, 3, wx.ALL, 0)
+        osizer.AddSpacer(80)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.AddSpacer(10)
@@ -73,6 +84,10 @@ class SettingsPage(wx.Panel):
         self.SetSizerAndFit(sizer)
         self.cb.SetValue(self.sync_model.GetAutoSyncState())
         self.notif_cb.SetValue(self.sync_model.GetUseSystemNotifSetting())
+
+    def OnDebugLogChoice(self, event):
+        lvl = self.log_choice.GetSelection()+1
+        self.sync_model.SetLogLevel(lvl)
 
     def AutoSyncSetting(self, event):
         if self.cb.GetValue():
@@ -102,6 +117,6 @@ class SettingsPage(wx.Panel):
         if dlg.ShowModal() == wx.ID_OK:
             self.sync_model.SetLocalMirrorDirectory(dlg.GetPath())
             resp = wx.MessageBox(new_dir_help, "IMPORTANT INFORMATION", (wx.OK | wx.ICON_WARNING))
-            
+            self.md.SetLabel(self.sync_model.GetLocalMirrorDirectory())
 
         dlg.Destroy()

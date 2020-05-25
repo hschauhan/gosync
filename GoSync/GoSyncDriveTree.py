@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import os
+import os, threading
 
 class DriveFolder(object):
     def __init__(self, parent, id, name, data=None):
@@ -33,7 +33,7 @@ class DriveFolder(object):
         return self.data
 
     def GetParent(self):
-        return parent
+        return self.parent
 
     def GetId(self):
         return self.id
@@ -99,7 +99,73 @@ class GoogleDriveTree(object):
         cnode = DriveFolder(pnode, folder_id, folder_name, data)
         pnode.AddChild(cnode)
 
-    def DeleteFolder(self, folder_id):
-        folder = self.FindFolder(folder_id)
-        if folder:
-            folder.GetParent().DeleteChild(folder)
+    def __DeleteFolder(self, folder_id, FolderDeleteCallback):
+        pnode = self.FindFolder(folder_id)
+
+        if not pnode.GetChildren():
+            if FolderDeleteCallback:
+                FolderDeleteCallback(pnode)
+            pnode.GetParent().DeleteChild(pnode)
+            return
+
+        #This try is important. After Deleting child, the pnode's
+        #for loop goes for a toss. So a call of pnode.GetChildren()
+        #is required to start afresh.
+        #
+        #I have sweat enough on it, can I can't get this working in
+        #a pure recursive way.
+        while True:
+            if not pnode.GetChildren():
+                break
+            for child in pnode.GetChildren():
+                self.__DeleteFolder(child.GetId())
+                break
+
+    #This is really ugly. But while deleting child, the child list
+    #keeps modifying and for loop goes for a toss. The "recursive"
+    #function doesn't delete the root. So second call to get rid of
+    #root node as well.
+    def DeleteFolder(self, folder_id, FolderDeleteCallback=None):
+        self.__DeleteFolder(folder_id, FolderDeleteCallback)
+        self.__DeleteFolder(folder_id, FolderDeleteCallback)
+
+    def PrintTree(self, folder_id):
+        pnode = self.FindFolder(folder_id)
+
+        if not pnode:
+            return
+
+        children = pnode.GetChildren()
+
+        for child in children:
+            if child:
+                self.PrintTree(child.GetId())
+
+        print("%s" % pnode.GetName())
+
+
+#DRIVER CODE
+#tree = GoogleDriveTree()
+#tree.AddFolder('root', 'aaaa', 'a', None)
+#tree.AddFolder('aaaa', 'bbbb', 'a/b', None)
+#tree.AddFolder('aaaa', 'nnnn', 'a/n', None)
+#tree.AddFolder('aaaa', 'oooo', 'a/o', None)
+#tree.AddFolder('bbbb', 'cccc', 'a/b/c', None)
+#tree.AddFolder('bbbb', 'llll', 'a/b/l', None)
+#tree.AddFolder('bbbb', 'mmmm', 'a/b/m', None)
+#tree.AddFolder('cccc', 'dddd', 'a/b/c/d', None)
+#tree.AddFolder('dddd', 'eeee', 'a/b/c/d/e', None)
+#tree.AddFolder('eeee', 'ffff', 'a/b/c/d/e/f', None)
+#tree.AddFolder('ffff', 'gggg', 'a/b/c/d/e/f/g', None)
+#tree.AddFolder('gggg', 'hhhh', 'a/b/c/d/e/f/g/h', None)
+#tree.AddFolder('hhhh', 'iiii', 'a/b/c/d/e/f/g/h/i', None)
+#tree.AddFolder('iiii', 'jjjj', 'a/b/c/d/e/f/g/h/i/j', None)
+#tree.AddFolder('jjjj', 'kkkk', 'a/b/c/d/e/f/g/h/i/j/k', None)
+#
+#tree.PrintTree('root')
+#print("++++++++++++++++++++++++++++")
+#tree.DeleteFolder('aaaa')
+#print("----------------------------")
+#tree.DeleteFolder('aaaa')
+#print("============================")
+#tree.PrintTree('root')

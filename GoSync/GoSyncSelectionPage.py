@@ -39,8 +39,8 @@ class SelectionPage(wx.Panel):
         self.sync_model = sync_model
         self.dstc = GoSyncDriveTree(self, pos=(0,0))
 
-        t1 = wx.StaticText(self, -1, "Choose the directories to sync:\n", pos=(0,0))
-        t1.SetFont(headerFont)
+        self.t1 = wx.StaticText(self, -1, "Choose the directories to sync:", pos=(0,0))
+        self.t1.SetFont(headerFont)
 
         self.cb = wx.CheckBox(self, -1, 'Sync Everything', (10, 10))
         self.cb.SetValue(True)
@@ -58,13 +58,15 @@ class SelectionPage(wx.Panel):
         self.cb.Bind(wx.EVT_CHECKBOX, self.SyncSetting)
 
         sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(t1, 0, wx.ALL)
+        sizer.Add(self.t1, 0, wx.ALL)
         sizer.Add(self.cb, 0, wx.ALL)
-        sizer.Add(self.dstc, 1, wx.EXPAND)
+        sizer.Add(self.dstc, 1, wx.EXPAND,2)
         self.SetSizer(sizer)
 
     def OnUsageCalculationStarted(self, event):
         self.cb.Disable()
+        self.dstc.Disable()
+        self.t1.SetLabel("Scanning Google Drive to create directory tree. Please Wait...")
 
     def SyncSetting(self, event):
         if self.cb.GetValue():
@@ -121,11 +123,12 @@ class SelectionPage(wx.Panel):
     def RefreshTree(self, event):
         self.Bind(CT.EVT_TREE_ITEM_CHECKED, None)
         driveTree = self.sync_model.GetDriveDirectoryTree()
+        self.t1.SetLabel("Choose the directories to sync:")
         self.cb.Enable()
         self.dstc.DeleteAllItems()
         self.dstc_root = self.dstc.AddRoot("Google Drive Root")
         self.MakeDriveTree(driveTree.GetRoot(), self.dstc_root)
-        self.dstc.ExpandAll()
+        self.dstc.Expand(self.dstc_root)
         sync_list = self.sync_model.GetSyncList()
         for d in sync_list:
             if d[0] == 'root':
@@ -136,10 +139,12 @@ class SelectionPage(wx.Panel):
             else:
                 self.cb.SetValue(False)
                 self.dstc.Enable()
+                self.dstc.SetFocus()
                 #break
 
         item_list = self.GetItemsToBeChecked(sync_list)
         for item in item_list:
             self.dstc.CheckItem(item)
+            self.dstc.Expand(item)
         self.Bind(CT.EVT_TREE_ITEM_CHECKED, self.ItemChecked)
 
