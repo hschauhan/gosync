@@ -24,8 +24,6 @@ if sys.version_info > (3,):
 else:
     import urllib2
 
-#from pydrive.auth import GoogleAuth
-#from pydrive.drive import GoogleDrive
 from os.path import expanduser
 from watchdog.observers import Observer
 from watchdog.events import PatternMatchingEventHandler
@@ -132,6 +130,7 @@ class GoSyncModel(object):
         self.account_dict = {}
         self.drive_usage_dict = {}
         self.config=None
+        self.LargeFileSize = 250000000
 
         self.logger = logging.getLogger(APP_NAME)
         self.logger.setLevel(logging.DEBUG)
@@ -1144,6 +1143,13 @@ class GoSyncModel(object):
 
 
 #### DownloadFileByObject
+    def partial(self, total_byte_len, part_size_limit):
+        s = []
+        for p in range(0, total_byte_len, part_size_limit):
+            last = min(total_byte_len - 1, p + part_size_limit - 1)
+            s.append([p, last])
+        return s
+
     def DownloadFileByObject(self, file_obj, download_path):
         abs_filepath = os.path.join(download_path, file_obj['name'])
         if os.path.exists(abs_filepath):
@@ -1155,36 +1161,57 @@ class GoSyncModel(object):
         else:
             self.SendlToLog(3,'DownloadFileByObject: Download Started - File (%s)' % abs_filepath)
             self.SendlToLog(3,'DownloadFileByObject: Download Started - File size (%s)' % file_obj['size'])
-            if (file_obj['size'] == '0') :
+            total_size = int(file_obj['size'])
+            if ( total_size == 0) :
                 open(abs_filepath, 'a').close()
                 self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
                 return
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
-            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+            if ( total_size < self.LargeFileSize) :
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
                                               {'Downloading %s' % fd})
-            while True:
-                try:
-                    request = self.drive.files().get_media(fileId=file_obj['id'])
-                    fh = io.FileIO(abs_filepath, 'wb')
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    while done is False:
-                        status, done = downloader.next_chunk()
-                    fh.close()
-                    self.updates_done = 1
-                    self.SendlToLog(3,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
-                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
-                    break
-                except HttpError as err:
-                    self.SendlToLog(3, "DownloadFileByObject: Error: %s\n", err.resp.reason)
-                    #These mean backend error, needs retry after atleast 1 second
-                    if err.resp.status in [403, 500, 503, 429]:
-                        self.SendlToLog(3, "DownloadFileByObject: Backend error. Retrying after 5 seconds.\n")
-                        time.sleep(5)
-                        continue
-                    else:
+                while True:
+                    try:
+                        request = self.drive.files().get_media(fileId=file_obj['id'])
+                        fh = io.FileIO(abs_filepath, 'wb')
+                        downloader = MediaIoBaseDownload(fh, request)
+                        done = False
+                        while done is False:
+                            status, done = downloader.next_chunk()
+                        fh.close()
+                        self.updates_done = 1
+                        self.SendlToLog(3,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
+                        break
+                    except HttpError as err:
+                        self.SendlToLog(3, "DownloadFileByObject: Error: %s\n", err.resp.reason)
+                        #These mean backend error, needs retry after atleast 1 second
+                        if err.resp.status in [403, 500, 503, 429]:
+                            self.SendlToLog(3, "DownloadFileByObject: Backend error. Retrying after 5 seconds.\n")
+                            time.sleep(5)
+                            continue
+                        else:
+                            raise
+                    except:
+                        print(er)
                         raise
+            else :
+                try:
+                    # Downloading large files : 100M chunk size
+                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+                                              {'Downloading %s' % fd})
+                    s = self.partial(total_size, 1000000000) 
+                    with open(abs_filepath, 'wb') as file:
+                        for bytes in s:
+                            request = self.drive.files().get_media(fileId=file_obj['id'])
+                            request.headers["Range"] = "bytes={}-{}".format(bytes[0], bytes[1]) 
+                            fh = io.BytesIO(request.execute())
+                            file.write(fh.getvalue())
+                            file.flush()
+                    self.updates_done = 1
+                    self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
+                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
                 except:
                     print(er)
                     raise
