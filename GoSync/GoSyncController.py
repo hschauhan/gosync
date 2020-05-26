@@ -33,7 +33,7 @@ try :
 	from .DriveUsageBox import DriveUsageBox
 	from .GoSyncEvents import *
 	from .GoSyncSelectionPage import SelectionPage
-	from .GoSyncSettingsPage import SettingsPage
+	from .GoSyncSettingPage import SettingsPage
 except (ImportError, ValueError):
 	from GoSyncModel import GoSyncModel, ClientSecretsNotFound
 	from defines import *
