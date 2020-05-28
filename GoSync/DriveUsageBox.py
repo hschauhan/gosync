@@ -28,8 +28,8 @@ class DriveUsageBox(wx.Panel):
 
         font = wx.Font(10, wx.SWISS, wx.NORMAL, wx.NORMAL)
 
-        bar_size = (parent.GetSize()[0], 18)
-        self.barWidth = bar_size[0]
+        bar_size = (parent.GetSize()[0], 20)
+        self.barWidth = bar_size[0]+20
         self.barHeight = bar_size[1]
         self.bar_position = (parent.GetPosition()[0]+3, parent.GetPosition()[1]+3)
         self.photoSize = 0
@@ -39,19 +39,21 @@ class DriveUsageBox(wx.Panel):
         self.documentSize = 0
 
         legendSize = (15,10)
+        legendStyle = wx.BORDER_RAISED
 
         self.drive_size_bytes = drive_size_bytes
 
-        self.t1 = wx.StaticText(self, -1, "Your Google Drive usage is shown below:\n", (0,0))
+        self.t1 = wx.StaticText(self, -1, "Your Google Drive usage is shown below:\n", (0,0), size=(200,20))
         self.t1.SetFont(font)
 
-        self.basePanel = wx.Panel(self, id, self.bar_position, bar_size, wx.SUNKEN_BORDER)
+        #self.basePanel = wx.Panel(self, id, self.bar_position, bar_size, wx.SUNKEN_BORDER)
+        self.basePanel = wx.Panel(self, wx.ID_ANY, style=wx.SUNKEN_BORDER)
 
-        self.audioPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (0, self.barHeight))
-        self.moviesPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (0, self.barHeight))
-        self.documentPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0),(0, self.barHeight))
-        self.photoPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (0, self.barHeight))
-        self.othersPanel = wx.Panel(self.basePanel, wx.ID_ANY, (0,0), (0, self.barHeight))
+        self.audioPanel = wx.Panel(self.basePanel, wx.ID_ANY, size=(self.barWidth, self.barHeight))
+        self.moviesPanel = wx.Panel(self.basePanel, wx.ID_ANY, size=(self.barWidth, self.barHeight))
+        self.documentPanel = wx.Panel(self.basePanel, wx.ID_ANY, size=(self.barWidth, self.barHeight))
+        self.photoPanel = wx.Panel(self.basePanel, wx.ID_ANY, size=(self.barWidth, self.barHeight))
+        self.othersPanel = wx.Panel(self.basePanel, wx.ID_ANY, size=(self.barWidth, self.barHeight))
 
         self.basePanel.SetBackgroundColour(wx.WHITE)
 
@@ -70,34 +72,34 @@ class DriveUsageBox(wx.Panel):
         mainSizer = wx.BoxSizer(wx.VERTICAL)
         mainSizer.Add(self.t1, 0, wx.ALL|wx.EXPAND, 5)
         #mainSizer.Add(self.basePanel, 0, wx.ALL|wx.FIXED_MINSIZE, 5)
-        mainSizer.Add(self.basePanel, 0, wx.ALL|wx.EXPAND, 5)
+        mainSizer.Add(self.basePanel, 0, wx.ALL|wx.EXPAND|wx.ALIGN_CENTER, 10)
 
-        legendAudio = wx.Panel(self, size=legendSize)
+        legendAudio = wx.Panel(self, size=legendSize, style=legendStyle)
         legendAudio.SetBackgroundColour(self.audioPanelColor)
         self.legendAudioText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendAudioText.SetFont(font)
 
-        legendMovies = wx.Panel(self, size=legendSize)
+        legendMovies = wx.Panel(self, size=legendSize, style=legendStyle)
         legendMovies.SetBackgroundColour(self.moviesPanelColor)
         self.legendMoviesText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendMoviesText.SetFont(font)
 
-        legendDocument = wx.Panel(self, size=legendSize)
+        legendDocument = wx.Panel(self, size=legendSize, style=legendStyle)
         legendDocument.SetBackgroundColour(self.documentPanelColor)
         self.legendDocumentText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendDocumentText.SetFont(font)
 
-        legendOthers = wx.Panel(self, size=legendSize)
+        legendOthers = wx.Panel(self, size=legendSize, style=legendStyle)
         legendOthers.SetBackgroundColour(self.othersPanelColor)
         self.legendOthersText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendOthersText.SetFont(font)
 
-        legendPhoto = wx.Panel(self, size=legendSize)
+        legendPhoto = wx.Panel(self, size=legendSize, style=legendStyle)
         legendPhoto.SetBackgroundColour(self.photoPanelColor)
         self.legendPhotoText = wx.StaticText(self, -1, "", size=(200,20))
         self.legendPhotoText.SetFont(font)
 
-        legendFree = wx.Panel(self, size=legendSize)
+        legendFree = wx.Panel(self, size=legendSize, style=legendStyle)
         legendFree.SetBackgroundColour(wx.WHITE)
         legendFreeText = wx.StaticText(self, -1, "Free Space")
         legendFreeText.SetFont(font)
@@ -123,7 +125,7 @@ class DriveUsageBox(wx.Panel):
         legendSizer.Add(legendFree, 0, wx.ALL|wx.EXPAND, 5)
         legendSizer.Add(legendFreeText, 0, wx.ALL|wx.EXPAND, 5)
 
-        mainSizer.Add(legendSizer)
+        mainSizer.Add(legendSizer, 1, wx.ALL|wx.ALIGN_CENTER|wx.EXPAND, 10)
         self.SetSizerAndFit(mainSizer)
 
     def FileSizeHumanize(self, size):
@@ -155,7 +157,7 @@ class DriveUsageBox(wx.Panel):
 
     def SetMoviesUsage(self, size):
         self.moviesPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
-        self.legendMoviesText.SetLabel('Movies ' + self.FileSizeHumanize(size))
+        self.legendMoviesText.SetLabel('Videos ' + self.FileSizeHumanize(size))
 
     def SetPhotoUsage(self, size):
         self.photoPanelWidth = float((float(size) * 100)/self.drive_size_bytes)
