@@ -572,6 +572,7 @@ class GoSyncModel(object):
                 raise
 
     def UploadFile(self, file_path):
+        self.SendlToLog(3, "UploadFile: %s" % file_path)
         if os.path.isfile(file_path):
             drivepath = file_path.split(self.mirror_directory+'/')[1]
             self.SendlToLog(3,"file: %s drivepath is %s\n" % (file_path, drivepath))
@@ -958,7 +959,8 @@ class GoSyncModel(object):
                     except:
                         if os.path.exists(dirpath) and os.path.isfile(dirpath):
                             self.SendlToLog(2,"SyncLocalDirectory: Uploading Local File (%s) - Not in Remote\n" % dirpath)
-                            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Uploading: %s" % f['name']})
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+                                                              {"Uploading: %s" % self.GetRelativeFolder(dirpath, False)})
                             self.UploadFile(dirpath)
 
             for names in dirs:
