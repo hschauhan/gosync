@@ -132,7 +132,7 @@ class GoSyncModel(object):
         self.config=None
         self.LargeFileSize = 250000000
 
-        self.logger = logging.getLogger(APP_NAME)
+        self.logger = logging.getLogger(APP_NAME + APP_VERSION)
         self.logger.setLevel(logging.DEBUG)
         fh = logging.FileHandler(os.path.join(os.environ['HOME'], 'GoSync.log'))
         fh.setLevel(logging.DEBUG)
@@ -1145,15 +1145,44 @@ class GoSyncModel(object):
 
 
 #### DownloadFileByObject
-    def partial(self, total_byte_len, part_size_limit):
-        s = []
-        for p in range(0, total_byte_len, part_size_limit):
-            last = min(total_byte_len - 1, p + part_size_limit - 1)
-            s.append([p, last])
-        return s
-
+    #### DownloadFileByObject
+    #def DownloadFileByObject(self, file_obj, download_path):
     def DownloadFileByObject(self, file_obj, download_path):
+        PreviousFile = ''
+        NewFile = ''
+        #LargeFileSize = 2500000
+        #LargeBlockSize = 1000000
+        LargeFileSize = 250000000
+        LargeBlockSize = 1000000000
+        # Handle Retries 
+        def RetryAndContinue(retryCounter, exceptionMsg):
+            retryCounter -= 1
+            if retryCounter > 0 :
+                self.SendlToLog(1, "DownloadFileByObject: Download error (%s). Retrying... (%s)" % (exceptionMsg,str(retryCounter)))
+                time.sleep(5)
+            else:
+                self.SendlToLog(1, "DownloadFileByObject: Download error (%s). Aborting..." % exceptionMsg)
+            return retryCounter
+        #def partial(self, total_byte_len, part_size_limit):
+        def partial(total_byte_len, part_size_limit):
+            s = []
+            for p in range(0, total_byte_len, part_size_limit):
+                last = min(total_byte_len - 1, p + part_size_limit - 1)
+                s.append([p, last])
+            return s
+        def PrepareDownload(download_path) : 
+            pass
+
+        def AbortingDownload():
+            return not self.syncRunning.is_set() or self.shutting_down
+
+        def CleanUpDownload(download_path):
+            if os.path.exists(download_path):
+                os.remove(download_path)
+
         abs_filepath = os.path.join(download_path, file_obj['name'])
+        PrepareDownload(abs_filepath)
+
         if os.path.exists(abs_filepath):
             if self.HashOfFile(abs_filepath) == file_obj['md5Checksum']:
                 self.SendlToLog(3,'DownloadFileByObject: Skipping File (%s) - same as remote.\n' % abs_filepath)
@@ -1161,63 +1190,62 @@ class GoSyncModel(object):
             else:
                 self.SendlToLog(2,"DownloadFileByObject: Skipping File (%s) - Local and Remote - Same Name but Different Content.\n" % abs_filepath)
         else:
-            self.SendlToLog(3,'DownloadFileByObject: Download Started - File (%s)' % abs_filepath)
-            self.SendlToLog(3,'DownloadFileByObject: Download Started - File size (%s)' % file_obj['size'])
+            self.SendlToLog(3,'DownloadFileByObject: Download Started - File (%s), size (%s)' % (abs_filepath, file_obj['size']))
             total_size = int(file_obj['size'])
-            if ( total_size == 0) :
-                open(abs_filepath, 'a').close()
-                self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
-                return
             fd = abs_filepath.split(self.mirror_directory+'/')[1]
-            if ( total_size < self.LargeFileSize) :
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
-                                              {'Downloading %s' % fd})
-                while True:
-                    try:
+            retries = 5
+            while True:
+                try:
+                    if ( total_size == 0) :
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading %s' % fd})
+                        open(abs_filepath, 'a').close()
+                        break 
+                    elif ( total_size < LargeFileSize) :
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading %s' % fd})
                         request = self.drive.files().get_media(fileId=file_obj['id'])
                         fh = io.FileIO(abs_filepath, 'wb')
                         downloader = MediaIoBaseDownload(fh, request)
                         done = False
                         while done is False:
-                            status, done = downloader.next_chunk()
+                            if AbortingDownload() :
+                                break
+                            else :
+                                status, done = downloader.next_chunk()
                         fh.close()
-                        self.updates_done = 1
-                        self.SendlToLog(3,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
-                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
-                        break
-                    except HttpError as err:
-                        self.SendlToLog(3, "DownloadFileByObject: Error: %s\n", err.resp.reason)
-                        #These mean backend error, needs retry after atleast 1 second
-                        if err.resp.status in [403, 500, 503, 429]:
-                            self.SendlToLog(3, "DownloadFileByObject: Backend error. Retrying after 5 seconds.\n")
-                            time.sleep(5)
-                            continue
-                        else:
-                            raise
-                    except:
-                        print(er)
+                        break 
+                    else :
+                        # Downloading large files : 100M chunk size
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading %s' % fd})
+                        s = partial(total_size, LargeBlockSize) 
+                        with open(abs_filepath, 'wb') as file:
+                            for bytes in s:
+                                if AbortingDownload() :
+                                    break
+                                else :
+                                    request = self.drive.files().get_media(fileId=file_obj['id'])
+                                    print('DownloadFileByObject: Downloading - File (%s) - %s%%\n' % (abs_filepath, str(int(bytes[1]/total_size*100))))
+                                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading (%s) %s%%\n' % (fd, str(int(bytes[1]/total_size*100)))})
+                                    request.headers["Range"] = "bytes={}-{}".format(bytes[0], bytes[1]) 
+                                    fh = io.BytesIO(request.execute())
+                                    file.write(fh.getvalue())
+                                    file.flush()
+                        break 
+                except Exception as err:
+                    retries = RetryAndContinue(retries, str(err))
+                    if retries > 0 : 
+                        continue
+                    else :
+                        CleanUpDownload(abs_filepath)
                         raise
+            if AbortingDownload() :
+                CleanUpDownload(abs_filepath)
+                self.updates_done = 1
+                self.SendlToLog(2,'DownloadFileByObject: Download Aborted - File (%s)\n' % abs_filepath)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
             else :
-                try:
-                    # Downloading large files : 100M chunk size
-                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
-                                              {'Downloading %s' % fd})
-                    s = self.partial(total_size, 1000000000) 
-                    with open(abs_filepath, 'wb') as file:
-                        for bytes in s:
-                            request = self.drive.files().get_media(fileId=file_obj['id'])
-                            request.headers["Range"] = "bytes={}-{}".format(bytes[0], bytes[1]) 
-                            fh = io.BytesIO(request.execute())
-                            file.write(fh.getvalue())
-                            file.flush()
-                    self.updates_done = 1
-                    self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
-                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
-                except:
-                    print(er)
-                    raise
-
+                self.updates_done = 1
+                self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
 
 
 #### SyncRemoteDirectory
