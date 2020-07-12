@@ -1223,7 +1223,6 @@ class GoSyncModel(object):
                                     break
                                 else :
                                     request = self.drive.files().get_media(fileId=file_obj['id'])
-                                    print('DownloadFileByObject: Downloading - File (%s) - %s%%\n' % (abs_filepath, str(int(bytes[1]/total_size*100))))
                                     GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading (%s) %s%%\n' % (fd, str(int(bytes[1]/total_size*100)))})
                                     request.headers["Range"] = "bytes={}-{}".format(bytes[0], bytes[1]) 
                                     fh = io.BytesIO(request.execute())
