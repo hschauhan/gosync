@@ -21,6 +21,8 @@ import os, wx
 GOSYNC_EVENT_CALCULATE_USAGE_STARTED = '_gosync_calculate_usage_started'
 GOSYNC_EVENT_CALCULATE_USAGE_UPDATE = '_gosync_calculate_usage_update'
 GOSYNC_EVENT_CALCULATE_USAGE_DONE = '_gosync_calculate_usage_done'
+GOSYNC_EVENT_BUSY_STARTED = '_gosync_busy_started'
+GOSYNC_EVENT_BUSY_DONE = '_gosync_busy_done'
 GOSYNC_EVENT_SYNC_STARTED = '_gosync_sync_started'
 GOSYNC_EVENT_SYNC_UPDATE = '_gosync_sync_update'
 GOSYNC_EVENT_SYNC_DONE = '_gosync_sync_done'
@@ -30,6 +32,8 @@ GOSYNC_EVENT_SCAN_UPDATE = '_gosync_scan_update'
 GOSYNC_EVENT_INTERNET_UNREACHABLE = '_gosync_internet_unreachable'
 GOSYNC_EVENT_MIRROR_DIRECTORY_MOVE = '_gosync_mirror_directory_move'
 
+GOSYNC_EVENT_ID_BUSY_STARTED = wx.NewId()
+GOSYNC_EVENT_ID_BUSY_DONE = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_STARTED = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_UPDATE = wx.NewId()
 GOSYNC_EVENT_ID_SYNC_DONE = wx.NewId()
@@ -53,7 +57,9 @@ class GoSyncEvent(wx.PyEvent):
 # different modules of GoSync
 class GoSyncEventController(object):
     _event_controller_instance = None
-    _sync_events = {GOSYNC_EVENT_SYNC_STARTED: GOSYNC_EVENT_ID_SYNC_STARTED,
+    _sync_events = {GOSYNC_EVENT_BUSY_STARTED: GOSYNC_EVENT_ID_BUSY_STARTED,
+                    GOSYNC_EVENT_BUSY_DONE: GOSYNC_EVENT_ID_BUSY_DONE,
+                    GOSYNC_EVENT_SYNC_STARTED: GOSYNC_EVENT_ID_SYNC_STARTED,
                     GOSYNC_EVENT_SYNC_UPDATE: GOSYNC_EVENT_ID_SYNC_UPDATE,
                     GOSYNC_EVENT_SYNC_DONE: GOSYNC_EVENT_ID_SYNC_DONE,
                     GOSYNC_EVENT_CALCULATE_USAGE_STARTED: GOSYNC_EVENT_ID_CALCULATE_USAGE_STARTED,
@@ -64,7 +70,9 @@ class GoSyncEventController(object):
                     GOSYNC_EVENT_INTERNET_UNREACHABLE: GOSYNC_EVENT_ID_INTERNET_UNREACHABLE,
                     GOSYNC_EVENT_MIRROR_DIRECTORY_MOVE: GOSYNC_EVENT_ID_MIRROR_DIRECTORY_MOVE,
                     GOSYNC_EVENT_SYNC_INV_FOLDER: GOSYNC_EVENT_ID_SYNC_INV_FOLDER}
-    _sync_listeners = {GOSYNC_EVENT_SYNC_STARTED:[],
+    _sync_listeners = {GOSYNC_EVENT_BUSY_STARTED:[],
+                       GOSYNC_EVENT_BUSY_DONE: [],
+                       GOSYNC_EVENT_SYNC_STARTED:[],
                        GOSYNC_EVENT_SYNC_UPDATE: [],
                        GOSYNC_EVENT_SYNC_DONE: [],
                        GOSYNC_EVENT_CALCULATE_USAGE_STARTED: [],

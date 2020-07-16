@@ -959,8 +959,7 @@ class GoSyncModel(object):
                     except:
                         if os.path.exists(dirpath) and os.path.isfile(dirpath):
                             self.SendlToLog(2,"SyncLocalDirectory: Uploading Local File (%s) - Not in Remote\n" % dirpath)
-                            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
-                                                              {"Uploading: %s" % self.GetRelativeFolder(dirpath, False)})
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Uploading: %s" % self.GetRelativeFolder(dirpath, False)})
                             self.UploadFile(dirpath)
 
             for names in dirs:
@@ -1197,11 +1196,11 @@ class GoSyncModel(object):
             while True:
                 try:
                     if ( total_size == 0) :
-                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading %s' % fd})
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
                         open(abs_filepath, 'a').close()
                         break 
                     elif ( total_size < LargeFileSize) :
-                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading %s' % fd})
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
                         request = self.drive.files().get_media(fileId=file_obj['id'])
                         fh = io.FileIO(abs_filepath, 'wb')
                         downloader = MediaIoBaseDownload(fh, request)
@@ -1215,7 +1214,7 @@ class GoSyncModel(object):
                         break 
                     else :
                         # Downloading large files : 100M chunk size
-                        GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading %s' % fd})
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
                         s = partial(total_size, LargeBlockSize) 
                         with open(abs_filepath, 'wb') as file:
                             for bytes in s:
@@ -1240,11 +1239,11 @@ class GoSyncModel(object):
                 CleanUpDownload(abs_filepath)
                 self.updates_done = 1
                 self.SendlToLog(2,'DownloadFileByObject: Download Aborted - File (%s)\n' % abs_filepath)
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_DONE, {'Download Aborted'})
             else :
                 self.updates_done = 1
                 self.SendlToLog(2,'DownloadFileByObject: Download Completed - File (%s)\n' % abs_filepath)
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {''})
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_DONE, {''})
 
 
 #### SyncRemoteDirectory

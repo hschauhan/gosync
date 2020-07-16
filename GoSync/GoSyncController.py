@@ -128,7 +128,7 @@ class GoSyncController(wx.Frame):
 
         self.aboutdrive = self.sync_model.DriveInfo()
         self.Bind(wx.EVT_CLOSE, self.OnExit)
-
+        self.IsBusy = False
         title_string = "GoSync - %s (%s used of %s)" % (self.aboutdrive['user']['displayName'],
 
 
@@ -191,6 +191,10 @@ class GoSyncController(wx.Frame):
 
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_STARTED,
                                           self.OnSyncStarted)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_BUSY_STARTED,
+                                          self.OnBusyStart)
+        GoSyncEventController().BindEvent(self, GOSYNC_EVENT_BUSY_DONE,
+                                          self.OnBusyDone)
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_UPDATE,
                                           self.OnSyncUpdate)
         GoSyncEventController().BindEvent(self, GOSYNC_EVENT_SYNC_DONE,
@@ -301,6 +305,18 @@ class GoSyncController(wx.Frame):
         unicode_string = event.data.pop()
         self.sb.SetStatusText(unicode_string.encode('ascii', 'ignore'))
 
+    #BusyStart : when a transfer starts
+    def OnBusyStart(self, event):
+        self.IsBusy = True
+        unicode_string = event.data.pop()
+        self.sb.SetStatusText(unicode_string.encode('ascii', 'ignore'))
+
+    #BusyDone : when a transfer stops
+    def OnBusyDone(self, event):
+        self.IsBusy = False
+        unicode_string = event.data.pop()
+        self.sb.SetStatusText(unicode_string.encode('ascii', 'ignore'))
+
     def OnSyncDone(self, event):
         if not event.data:
             if self.sync_model.GetUseSystemNotifSetting():
@@ -365,15 +381,23 @@ class GoSyncController(wx.Frame):
         res = dial.ShowModal()
         if res == wx.ID_YES:
             if self.sync_model.IsSyncEnabled() or self.sync_model.IsSyncRunning():
+                self.sync_model.StopSync()
+                self.Disable()
+                if self.IsBusy :
+                    self.sb.SetStatusText("Please wait while GoSync is Cancelling a Transfer")
+                else :
+                    self.sb.SetStatusText("Paused", 1)
                 self.sync_model.StopTheShow()
-                self.sb.SetStatusText("Paused", 1)
 
             wx.CallAfter(self.Destroy)
 
     def OnToggleSync(self, evt):
         if self.sync_model.IsSyncEnabled():
             self.sync_model.StopSync()
-            self.sb.SetStatusText("Sync is paused")
+            if self.IsBusy :
+                self.sb.SetStatusText("Please wait while GoSync is Cancelling a Transfer")
+            else :
+                self.sb.SetStatusText("Sync is paused")
             self.sb.SetStatusText("Paused", 1)
             self.pr_item.SetItemLabel("Resume Sync")
             self.sync_now_mitem.Enable(False)
