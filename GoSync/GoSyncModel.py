@@ -173,7 +173,7 @@ class GoSyncModel(object):
         self.observer = Observer()
         self.SendlToLog(2, "Initialize - Going for authentication")
         self.DoAuthenticate()
-        self.about_drive = self.drive.about().get(fields='user, storageQuota').execute()
+        self.RetrieveAbout_Drive()
         self.SendlToLog(2,"Initialize - Completed Drive Quota Execution")
 
         self.user_email = self.about_drive['user']['emailAddress']
@@ -246,6 +246,14 @@ class GoSyncModel(object):
                 self.logger.info(LogMsg)
             if (LogType == 1) :
                 self.logger.error(LogMsg)
+            
+    def RetrieveAbout_Drive(self):
+        self.about_drive = self.drive.about().get(fields='user, storageQuota').execute()
+        #test test
+        #self.about_drive['storageQuota'].pop('limit')
+        #with GSuite for Business there is no Storage Limit, set limit to usage
+        if ('limit' not in self.about_drive['storageQuota']) :
+            self.about_drive['storageQuota']['limit'] = self.about_drive['storageQuota']['usage']
 
     def SetTheBallRolling(self):
         #if we can autostart and user has selected autostart
@@ -1536,6 +1544,7 @@ class GoSyncModel(object):
             self.drivePhotoUsage = 0
             self.driveOthersUsage = 0
             self.fcount = 0
+            self.RetrieveAbout_Drive()
             try:
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_STARTED, 0)
                 self.SendlToLog(3,"CalculateUsage: Scanning files...\n")

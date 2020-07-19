@@ -129,13 +129,7 @@ class GoSyncController(wx.Frame):
         self.aboutdrive = self.sync_model.DriveInfo()
         self.Bind(wx.EVT_CLOSE, self.OnExit)
         self.IsBusy = False
-        title_string = "GoSync - %s (%s used of %s)" % (self.aboutdrive['user']['displayName'],
-
-
-	    self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])),
-
-	    self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
-        self.SetTitle(title_string)
+        self.DisplayTitleBar()
         appIcon = wx.Icon(APP_ICON, wx.BITMAP_TYPE_PNG)
         self.SetIcon(appIcon)
         menuBar = wx.MenuBar()
@@ -214,6 +208,13 @@ class GoSyncController(wx.Frame):
 
         self.sync_model.SetTheBallRolling()
 
+    def DisplayTitleBar(self):
+        title_string = "GoSync - %s (%s used of %s)" % (self.aboutdrive['user']['displayName'],
+                self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['usageInDrive'])), 
+                self.FileSizeHumanize(long(self.aboutdrive['storageQuota']['limit'])))
+        self.SetTitle(title_string)
+
+
     def OnUsageCalculationStarted(self, event):
         self.pr_item.Enable(False)
         self.sync_now_mitem.Enable(False)
@@ -226,6 +227,7 @@ class GoSyncController(wx.Frame):
         else:
             self.sync_now_mitem.Enable(False)
         self.rcu.Enable(True)
+        self.DisplayTitleBar()
         self.sb.SetStatusText("Usage calculation completed.")
 
     def OnInternetDown(self, event):
