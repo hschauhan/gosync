@@ -16,7 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #
 
-import sys, os, wx, ntpath, threading, hashlib, time, copy, io
+import sys, os, wx, ntpath, threading, hashlib, time, copy, io, re
 import shutil
 if sys.version_info > (3,):
     long = int
@@ -84,15 +84,7 @@ image_file_mimelist = ['image/png', 'image/jpeg', 'image/jpg', 'image/tiff']
 document_file_mimelist = ['application/powerpoint', 'applciation/mspowerpoint', \
                               'application/x-mspowerpoint', 'application/pdf', \
                               'application/x-dvi']
-google_docs_mimelist = ['application/vnd.google-apps.spreadsheet', \
-                            'application/vnd.google-apps.sites', \
-                            'application/vnd.google-apps.script', \
-                            'application/vnd.google-apps.presentation', \
-                            'application/vnd.google-apps.fusiontable', \
-                            'application/vnd.google-apps.form', \
-                            'application/vnd.google-apps.drawing', \
-                            'application/vnd.google-apps.document', \
-                            'application/vnd.google-apps.map']
+google_docs_re = 'application/vnd.google-apps'
 
 Default_Log_Level = 3
 
@@ -131,6 +123,7 @@ class GoSyncModel(object):
         self.drive_usage_dict = {}
         self.config=None
         self.LargeFileSize = 250000000
+        self.gd_regex = re.compile(google_docs_re, re.IGNORECASE)
 
         self.logger = logging.getLogger(APP_NAME + APP_VERSION)
         self.logger.setLevel(logging.DEBUG)
@@ -1090,7 +1083,7 @@ class GoSyncModel(object):
             raise
 
     def IsGoogleDocument(self, f):
-        if any(f['mimeType'] in s for s in google_docs_mimelist):
+        if self.gd_regex.search(f['mimeType']):
             return True
         else:
             return False
