@@ -599,6 +599,7 @@ class GoSyncModel(object):
                 try:
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'UpLoading %s in root' % file_path})
                     self.CreateRegularFile(file_path, 'root', newfile)
+                    self.SendlToLog(3, 'Created %s\n' % file_path)
                 except:
                     self.SendlToLog(1, "CreateRegularFile: Failed to upload %s" % file_path)
                     raise RegularFileUploadFailed()
@@ -633,6 +634,7 @@ class GoSyncModel(object):
             else:
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
                                                   {"Uploading File: %s" % self.GetRelativeFolder(file_path, False)})
+                self.SendlToLog(3, "Uploading File: %s" % self.GetRelativeFolder(file_path, False))
                 self.UploadFile(file_path)
         except InternetNotReachable as ie:
             self.SendlToLog(1, "UploadObservedFile - Internet is down")
@@ -704,8 +706,12 @@ class GoSyncModel(object):
                 if ftd['mimeType'] == 'application/vnd.google-apps.folder':
                     self.SendlToLog(3, "Deleting folder %s (%s) from local drive tree"
                                     % (self.GetRelativeFolder(file_path), ftd['id']))
-                    self.driveTree.DeleteFolder(ftd['id'], self.TrashFileCallback)
-                    GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                    try:
+                        self.driveTree.DeleteFolder(ftd['id'], self.TrashFileCallback)
+                        GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                    except:
+                        self.SendlToLog(3, "Could not delete file from local tree");
+                self.SendlToLog(3, "Now deleting remote file %s" % ftd)
                 self.TrashFile(ftd)
             except RegularFileTrashFailed:
                 self.SendlToLog(1,{"TRASH_FILE: Failed to move file %s to trash\n" % drive_path})
