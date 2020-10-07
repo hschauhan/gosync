@@ -79,11 +79,13 @@ class InternetNotReachable(RuntimeError):
     """Failed to connect to the internet"""
 
 audio_file_mimelist = ['audio/mpeg', 'audio/x-mpeg-3', 'audio/mpeg3', 'audio/aiff', 'audio/x-aiff', 'audio/m4a', 'audio/mp4', 'audio/flac', 'audio/mp3']
-movie_file_mimelist = ['video/mp4', 'video/x-msvideo', 'video/mpeg', 'video/flv', 'video/quicktime']
+movie_file_mimelist = ['video/mp4', 'video/x-msvideo', 'video/mpeg', 'video/flv', 'video/quicktime', 'video/mkv']
 image_file_mimelist = ['image/png', 'image/jpeg', 'image/jpg', 'image/tiff']
 document_file_mimelist = ['application/powerpoint', 'applciation/mspowerpoint', \
                               'application/x-mspowerpoint', 'application/pdf', \
-                              'application/x-dvi']
+                              'application/x-dvi', 'application/vnd.ms-htmlhelp', \
+                          'application/x-mobipocket-ebook', \
+                          'application/vnd.ms-publisher']
 google_docs_re = 'application/vnd.google-apps'
 
 Default_Log_Level = 3
@@ -124,6 +126,10 @@ class GoSyncModel(object):
         self.config=None
         self.LargeFileSize = 250000000
         self.gd_regex = re.compile(google_docs_re, re.IGNORECASE)
+        self.aud_regex = re.compile('audio', re.IGNORECASE)
+        self.vid_regex = re.compile('video', re.IGNORECASE)
+        self.img_regex = re.compile('image', re.IGNORECASE)
+        self.doc_regex = re.compile('officedocument', re.IGNORECASE)
 
         self.logger = logging.getLogger(APP_NAME + APP_VERSION)
         self.logger.setLevel(logging.DEBUG)
@@ -239,7 +245,7 @@ class GoSyncModel(object):
                 self.logger.info(LogMsg)
             if (LogType == 1) :
                 self.logger.error(LogMsg)
-            
+
     def RetrieveAbout_Drive(self):
         self.about_drive = self.drive.about().get(fields='user, storageQuota').execute()
         #test test
@@ -1072,6 +1078,12 @@ class GoSyncModel(object):
                         raise FileListQueryFailed()
             break
 
+    def RefreshHTTPConnection(self):
+        try:
+            file_list = self.MakeFileListQuery("'root' in parents and trashed=false")
+        except:
+            raise
+
     def TotalFilesInFolder(self, parent='root'):
         file_count = 0
         try:
@@ -1090,6 +1102,32 @@ class GoSyncModel(object):
 
     def IsGoogleDocument(self, f):
         if self.gd_regex.search(f['mimeType']):
+            return True
+        else:
+            return False
+
+    def IsAudioFile(self, f):
+        if self.aud_regex.search(f['mimeType']):
+            return True
+        else:
+            return False
+
+    def IsVideoFile(self, f):
+        if self.vid_regex.search(f['mimeType']):
+            return True
+        else:
+            return False
+
+    def IsImageFile(self, f):
+        if self.img_regex.search(f['mimeType']):
+            return True
+        else:
+            return False
+
+    def IsDocument(self, f):
+        if self.doc_regex.search(f['mimeType']):
+            return True
+        elif any(f['mimeType'] in s for s in document_file_mimelist):
             return True
         else:
             return False
@@ -1160,7 +1198,7 @@ class GoSyncModel(object):
         #LargeBlockSize = 1000000
         LargeFileSize = 250000000
         LargeBlockSize = 1000000000
-        # Handle Retries 
+        # Handle Retries
         def RetryAndContinue(retryCounter, exceptionMsg):
             retryCounter -= 1
             if retryCounter > 0 :
@@ -1176,7 +1214,7 @@ class GoSyncModel(object):
                 last = min(total_byte_len - 1, p + part_size_limit - 1)
                 s.append([p, last])
             return s
-        def PrepareDownload(download_path) : 
+        def PrepareDownload(download_path) :
             pass
 
         def AbortingDownload():
@@ -1205,7 +1243,7 @@ class GoSyncModel(object):
                     if ( total_size == 0) :
                         GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
                         open(abs_filepath, 'a').close()
-                        break 
+                        break
                     elif ( total_size < LargeFileSize) :
                         GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
                         request = self.drive.files().get_media(fileId=file_obj['id'])
@@ -1218,11 +1256,11 @@ class GoSyncModel(object):
                             else :
                                 status, done = downloader.next_chunk()
                         fh.close()
-                        break 
+                        break
                     else :
                         # Downloading large files : 100M chunk size
                         GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
-                        s = partial(total_size, LargeBlockSize) 
+                        s = partial(total_size, LargeBlockSize)
                         with open(abs_filepath, 'wb') as file:
                             for bytes in s:
                                 if AbortingDownload() :
@@ -1230,14 +1268,14 @@ class GoSyncModel(object):
                                 else :
                                     request = self.drive.files().get_media(fileId=file_obj['id'])
                                     GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {'Downloading (%s) %s%%\n' % (fd, str(int(bytes[1]/total_size*100)))})
-                                    request.headers["Range"] = "bytes={}-{}".format(bytes[0], bytes[1]) 
+                                    request.headers["Range"] = "bytes={}-{}".format(bytes[0], bytes[1])
                                     fh = io.BytesIO(request.execute())
                                     file.write(fh.getvalue())
                                     file.flush()
-                        break 
+                        break
                 except Exception as err:
                     retries = RetryAndContinue(retries, str(err))
-                    if retries > 0 : 
+                    if retries > 0 :
                         continue
                     else :
                         CleanUpDownload(abs_filepath)
@@ -1351,6 +1389,7 @@ class GoSyncModel(object):
 
 #### run (Sync Local and Remote Directory)
     def run(self):
+        refresh_connection = 10
         while not self.shutting_down:
             self.SendlToLog(3, "SyncThread - run - Waiting for Sync to be enabled")
             self.syncRunning.wait()
@@ -1443,6 +1482,15 @@ class GoSyncModel(object):
             self.time_left = self.sync_interval
 
             while (self.time_left):
+                if (refresh_connection == 0):
+                    try:
+                        self.SendlToLog(3, "Refreshing HTTP connection")
+                        self.RefreshHTTPConnection()
+                    except:
+                        pass
+                    refresh_connection = 10
+                else:
+                    refresh_connection -= 1;
                 if not self.calculatingDriveUsage:
                     if not self.syncRunning.is_set():
                         GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_TIMER,
@@ -1495,17 +1543,17 @@ class GoSyncModel(object):
                     self.calculateUsageOfFolder(f['id'])
                 else:
                     if not self.IsGoogleDocument(f):
-                        if any(f['mimeType'] in s for s in audio_file_mimelist):
+                        if self.IsAudioFile(f):
                             self.driveAudioUsage += self.GetFileSize(f)
-                        elif  any(f['mimeType'] in s for s in image_file_mimelist):
+                        elif  self.IsImageFile(f):
                             self.drivePhotoUsage += self.GetFileSize(f)
-                        elif any(f['mimeType'] in s for s in movie_file_mimelist):
+                        elif self.IsVideoFile(f):
                             self.driveMoviesUsage += self.GetFileSize(f)
-                        elif any(f['mimeType'] in s for s in document_file_mimelist):
+                        elif self.IsDocument(f):
                             self.driveDocumentUsage += self.GetFileSize(f)
                         else:
                             self.driveOthersUsage += self.GetFileSize(f)
-                            #self.SendlToLog(3,"calculateUsageOfFolder: Unknown Mime %s\n" % f['mimeType'])
+                            self.SendlToLog(3,"calculateUsageOfFolder: Unknown Mime %s\n" % f['mimeType'])
                         GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_UPDATE, self.fcount)
         except:
             raise

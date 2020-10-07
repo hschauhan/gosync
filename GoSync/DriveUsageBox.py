@@ -72,7 +72,7 @@ class DriveUsageBox(wx.Panel):
         mainSizer = wx.BoxSizer(wx.VERTICAL)
         mainSizer.Add(self.t1, 0, wx.ALL|wx.EXPAND, 5)
         #mainSizer.Add(self.basePanel, 0, wx.ALL|wx.FIXED_MINSIZE, 5)
-        mainSizer.Add(self.basePanel, 0, wx.ALL|wx.EXPAND|wx.ALIGN_CENTER, 10)
+        mainSizer.Add(self.basePanel, 0, wx.ALL|wx.EXPAND, 10)
 
         legendAudio = wx.Panel(self, size=legendSize, style=legendStyle)
         legendAudio.SetBackgroundColour(self.audioPanelColor)
@@ -125,7 +125,7 @@ class DriveUsageBox(wx.Panel):
         legendSizer.Add(legendFree, 0, wx.ALL|wx.EXPAND, 5)
         legendSizer.Add(legendFreeText, 0, wx.ALL|wx.EXPAND, 5)
 
-        mainSizer.Add(legendSizer, 1, wx.ALL|wx.ALIGN_CENTER|wx.EXPAND, 10)
+        mainSizer.Add(legendSizer, 1, wx.ALL|wx.EXPAND, 10)
         self.SetSizerAndFit(mainSizer)
 
     def FileSizeHumanize(self, size):
