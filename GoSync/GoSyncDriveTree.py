@@ -16,7 +16,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import os, threading
+import os, threading, logging
 
 class DriveFolder(object):
     def __init__(self, parent, id, name, data=None):
@@ -72,11 +72,14 @@ class GoogleDriveTree(object):
 
     def FindFolderInParent(self, parent, id):
         for f in parent.GetChildren():
+            print("FindFolderInParent - Parent: %s Child %s" % (parent, f.GetId()))
             if f.GetId() == id:
+                print("FindFolderInParent - Found child with ID %s" % f.GetId())
                 return f
-            
+
             ret = self.FindFolderInParent(f, id)
             if ret:
+                print("FindFolderInParent - Found Folder (ID: %s)", ret.GetId())
                 return ret
 
         return None
@@ -91,22 +94,31 @@ class GoogleDriveTree(object):
         if not parent:
             return None
 
+        print("AddFolder: Parent: %s Folder: %s Name: %s" % (parent, folder_id, folder_name))
         pnode = self.FindFolder(parent)
-
+        print("AddFolder: Found parent Folder: %s" % parent)
         if self.FindFolder(folder_id):
             return
 
         cnode = DriveFolder(pnode, folder_id, folder_name, data)
         pnode.AddChild(cnode)
+        print("AddFolder: Child added")
 
     def __DeleteFolder(self, folder_id, FolderDeleteCallback):
+        print("__DeleteFolder: Folder: %s" % folder_id)
         pnode = self.FindFolder(folder_id)
+        print("__DeleteFolder: Found folder to delete")
 
         if not pnode.GetChildren():
+            print("__DeleteFolder: No child to folder %s" % folder_id)
+            print("__DeleteFolder: Path %s" % pnode.GetPath())
             if FolderDeleteCallback:
                 FolderDeleteCallback(pnode)
+            print("__DeleteFolder: Deleting from parent: %s this: %s" % (pnode.GetParent().GetId(), pnode.GetId()))
             pnode.GetParent().DeleteChild(pnode)
             return
+
+        print("__DeleteFolder: Folder %s has children. Deleting recursively" % folder_id)
 
         #This try is important. After Deleting child, the pnode's
         #for loop goes for a toss. So a call of pnode.GetChildren()
@@ -116,9 +128,11 @@ class GoogleDriveTree(object):
         #a pure recursive way.
         while True:
             if not pnode.GetChildren():
+                print("__DeleteFolder: No children? ID: %s" % pnode.GetId())
                 break
             for child in pnode.GetChildren():
-                self.__DeleteFolder(child.GetId())
+                print("__DeleteFolder: Recursive: child ID: %s name: %s" % (child.GetId(), child.GetName()))
+                self.__DeleteFolder(child.GetId(), FolderDeleteCallback)
                 break
 
     #This is really ugly. But while deleting child, the child list

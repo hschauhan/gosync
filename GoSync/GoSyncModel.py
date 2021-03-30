@@ -17,7 +17,7 @@
 #
 
 import sys, os, wx, ntpath, threading, hashlib, time, copy, io, re
-import shutil
+import shutil, traceback
 if sys.version_info > (3,):
     long = int
     import urllib.request
@@ -125,6 +125,7 @@ class GoSyncModel(object):
         self.drive_usage_dict = {}
         self.config=None
         self.LargeFileSize = 250000000
+        self.last_page_token = None
         self.gd_regex = re.compile(google_docs_re, re.IGNORECASE)
         self.aud_regex = re.compile('audio', re.IGNORECASE)
         self.vid_regex = re.compile('video', re.IGNORECASE)
@@ -291,6 +292,7 @@ class GoSyncModel(object):
         self.config_dict['UseSystemNotif'] = True
         self.config_dict['BaseMirrorDirectory'] = self.base_mirror_directory
         self.config_dict['LogLevel'] = Default_Log_Level
+        self.config_dict['LastPageToken'] = None
         self.account_dict[self.user_email] = self.config_dict
         json.dump(self.account_dict, f)
         f.close()
@@ -309,6 +311,10 @@ class GoSyncModel(object):
                             self.sync_interval = 1800
 
                     self.SendlToLog(3, "Sync Interval: %d seconds" % self.sync_interval)
+
+                    if self.config_dict['LastPageToken']:
+                        self.last_page_token = self.config_dict['LastPageToken']
+                        self.SendlToLog(3, "Last Page Token %s" % self.last_page_token)
 
                     if self.config_dict['LogLevel']:
                         lvl = self.config_dict['LogLevel']
@@ -372,6 +378,7 @@ class GoSyncModel(object):
         self.config_dict['SyncInterval'] = self.sync_interval
         self.config_dict['UseSystemNotif'] = self.use_system_notif
         self.config_dict['LogLevel'] = self.Log_Level
+        self.config_dict['LastPageToken'] = self.last_page_token
         if not self.sync_selection:
             self.config_dict['Sync Selection'] = [['root', '']]
 
@@ -431,10 +438,20 @@ class GoSyncModel(object):
                     creds.refresh(Request())
                 else:
                     self.SendlToLog(2, "Authenticate - New authentication")
-                    self.SendlToLog(2, "Authenticate - File %s" % (self.credential_file))
-                    flow = InstalledAppFlow.from_client_secrets_file(self.credential_file, SCOPES)
-                    self.SendlToLog(2, "Authenticate - running local server")
-                    creds = flow.run_local_server(port=0)
+                    try:
+                        self.SendlToLog(2, "Authenticate - File %s" % (self.credential_file))
+                        flow = InstalledAppFlow.from_client_secrets_file(self.credential_file, SCOPES)
+                    except:
+                        self.SendlToLog(2, "Authenticate - Failed to authenticate client secret file")
+                        raise
+
+                    try:
+                        self.SendlToLog(2, "Authenticate - running local server")
+                        creds = flow.run_local_server(port=8080)
+                    except:
+                        self.SendlToLog(2, "Authenticate - Failed to connect to local authentication server")
+                        raise
+
                 self.SendlToLog(2, "Authenticate - Saving pickle file")
                 # Save the credentials for the next run
                 with open(self.client_pickle, 'wb') as token:
@@ -477,6 +494,13 @@ class GoSyncModel(object):
         head, tail = ntpath.split(path)
         return tail or ntpath.basename(head)
 
+    def GetStartPageToken(self):
+        try:
+            response = self.drive.changes().getStartPageToken().execute()
+        except:
+            return None
+        else:
+            return response.get('startPageToken', None)
 
     def CreateDirectoryInParent(self, dirname, parent_id='root'):
         file_metadata = {'name': dirname,
@@ -484,9 +508,12 @@ class GoSyncModel(object):
         file_metadata['parents'] = [parent_id]
         upfile = self.drive.files().create(body=file_metadata, fields='id').execute()
 
-    def CreateDirectoryByPath(self, dirpath):
+    def CreateDirectoryByPath(self, dirpath, recursive=False, absolute=True):
         self.SendlToLog(3,"create directory: %s\n" % dirpath)
-        drivepath = dirpath.split(self.mirror_directory+'/')[1]
+        if absolute:
+            drivepath = dirpath.split(self.mirror_directory+'/')[1]
+        else:
+            drivepath = dirpath
         basepath = os.path.dirname(drivepath)
         dirname = self.PathLeaf(dirpath)
 
@@ -498,22 +525,24 @@ class GoSyncModel(object):
                 self.CreateDirectoryInParent(dirname)
             else:
                 try:
+                    # Check if parent directory exists
                     parent_folder = self.LocateFolderOnDrive(basepath)
-                    self.CreateDirectoryInParent(dirname, parent_folder['id'])
                 except:
-                    errorMsg = "Failed to locate directory path %s on drive.\n" % basepath
-                    self.SendlToLog(1,errorMsg)
-                    dial = wx.MessageDialog(None, errorMsg, 'Directory Not Found',
-                                            wx.ID_OK | wx.ICON_EXCLAMATION)
-                    dial.ShowModal()
-                    return
+                    # The parent directory doesn't exist. If recursive flag is set,
+                    # Create one now.
+                    if recursive:
+                        self.CreateDirectoryByPath(basepath, True, False)
+                        # Since the parent is new, we don't know its Id. Query once
+                        # to retrieve the same
+                        parent_folder = self.LocateFolderOnDrive(basepath)
+                    else:
+                        self.SendlToLog(1, "Failed to locate directory path %s on drive.\n" % basepath)
+                        raise FolderNotFound()
+
+                self.CreateDirectoryInParent(dirname, parent_folder['id'])
+                return
         except FileListQueryFailed:
-            errorMsg = "Server Query Failed!\n"
-            self.SendlToLog(1,errorMsg)
-            dial = wx.MessageDialog(None, errorMsg, 'Directory Not Found',
-                                    wx.ID_OK | wx.ICON_EXCLAMATION)
-            dial.ShowModal()
-            return
+            raise FileListQueryFailed()
 
     def CreateRegularFile(self, file_path, parent='root', uploaded=False):
         self.SendlToLog(3,"Create file %s\n" % file_path)
@@ -694,6 +723,8 @@ class GoSyncModel(object):
         if Folder and Folder.GetPath() in self.sync_selection:
             self.sync_selection.remove(Folder.GetPath())
             self.SendlToLog(3, "TrashFileCallback: Folder %s deleted from sync list" % Folder.GetPath())
+        else:
+            self.SendlToLog(3, "Folder being deleted is not in sync list")
 
     def TrashObservedFile(self, file_path):
         if self.IsSyncRunning():
@@ -925,6 +956,43 @@ class GoSyncModel(object):
         except:
             return None
 
+    def GetFolderNameOnDriveByID(self, fid):
+        """
+        Return the path of the folder identified by 'fid'
+        """
+        self.SendlToLog(3, "GetFolderOnDriveByID: %s" % fid)
+        try:
+            response = self.GetFileMetaDataByID(fid);
+        except:
+            self.SendlToLog(3, "GetFolderNameOnDriveByID - Gadbad hai bhai")
+            return None
+        else:
+            self.SendlToLog(3, "Got Response: name: %s" % response['name'])
+            if 'parents' in response:
+                return {'parents': response['parents'][0], 'name': response['name']}
+            else:
+                return {'parents': None, 'name': response['name']}
+
+    def GetFolderPathOnDriveByID(self, fid):
+        f_path = ''
+        self.SendlToLog(3, "##### First FID: %s #####" % fid)
+        while True:
+            try:
+                self.SendlToLog(3, "New FID: %s" % fid)
+                response = self.GetFolderNameOnDriveByID(fid)
+            except:
+                self.SendlToLog(3, "GetFolderPathOnDriveByID - Exception during getting name")
+                raise FolderNotFound()
+            else:
+                self.SendlToLog(3, "Got reponse")
+                if response['name'] == 'My Drive':
+                    self.SendlToLog(3, "GetFolderPathOnDriveByID - Final path %s" % f_path)
+                    return f_path
+                else:
+                    f_path = '/' + response['name'] + f_path
+                    fid = response['parents']
+                    continue
+
 #### SyncLocalDirectory
     def SyncLocalDirectory(self):
         if not self.syncRunning.is_set() or self.shutting_down:
@@ -1028,6 +1096,40 @@ class GoSyncModel(object):
         except:
             return False
 
+    def GetFileMetaDataByID(self, fid):
+        retry = 0
+        self.SendlToLog(3, "GetFileMetaDataByID - FileID: %s" % fid)
+        while True:
+            try:
+                response = self.drive.files().get(fileId=fid,
+                                                  fields='id, name, mimeType, trashed, parents, size, md5Checksum').execute()
+            except HttpError as error:
+                self.SendlToLog(1, "GetFileMetaDataByID - %s\n", error.resp.reason)
+                if error.resp.status in [403, 500, 503, 429]:
+                    self.SendlToLog(1, "GetFileMetaDataByID - Status: %d. (Retrying)\n", error.resp.status)
+                    time.sleep(5)
+                    continue
+
+                if not self.IsInternetReachable():
+                    self.SendlToLog(1, "GetFileMetaDataByID - Internet is down\n")
+                    raise InternetNotReachable()
+            except:
+                if not self.IsInternetReachable():
+                    self.SendlToLog(1, "GetFileMetaDataByID (unknown except) - Internet is down\n")
+                    raise InternetNotReachable()
+                else:
+                    if retry == 0:
+                        self.SendlToLog(1, "GetFileMetaDataByID - Query failed. Trying one more time.")
+                        retry = 1;
+                        continue
+                    else:
+                        self.SendlToLog(1, "GetFileMetaDataByID (unknown except %d) - Raising FileListQueryFailed", e.errno)
+                        raise FileListQueryFailed()
+            else:
+                self.SendlToLog(3, "GetFileMetaDataByID - Got something")
+                self.SendlToLog(3, "GetFileMetaDataByID - FileID: %s Name: %s" % (fid, response.get('name')))
+                return response
+
     def MakeFileListQuery(self, query):
         retry = 0
         while True:
@@ -1038,7 +1140,7 @@ class GoSyncModel(object):
                 while True:
                     response = self.drive.files().list(q=query,
                                                        spaces='drive',
-                                                       fields='nextPageToken, files(id, name, mimeType, size, md5Checksum)',
+                                                       fields='nextPageToken, files(id, name, parents, mimeType, size, md5Checksum)',
                                                        pageToken=page_token).execute()
                     filelist.extend(response.get('files',[]))
                     page_token = response.get('nextPageToken', None)
@@ -1099,6 +1201,12 @@ class GoSyncModel(object):
             return file_count
         except:
             raise
+
+    def IsGoogleFolder(self, mimeType):
+        if mimeType == 'application/vnd.google-apps.folder':
+            return True
+        else:
+            return False
 
     def IsGoogleDocument(self, f):
         if self.gd_regex.search(f['mimeType']):
@@ -1240,7 +1348,7 @@ class GoSyncModel(object):
             retries = 5
             while True:
                 try:
-                    if ( total_size == 0) :
+                    if (total_size == 0) :
                         GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
                         open(abs_filepath, 'a').close()
                         break
@@ -1388,8 +1496,150 @@ class GoSyncModel(object):
                     raise FolderNotFound("Root SHA not right")
 
 #### run (Sync Local and Remote Directory)
+    def GetChangeListSinceLastToken(self, last_token):
+        return self.drive.changes().list(pageToken=last_token,
+                                         space='drive').execute()
+
+    def RunSyncSincePageToken(self, last_page_token):
+        folder_del_pending = []
+
+        self.SendlToLog(3, "RunSyncSincePageToken - Querying changes since %s" % last_page_token)
+        response = self.drive.changes().list(pageToken=last_page_token).execute()
+
+        if response is None:
+            self.SendlToLog(2, "RunSyncSincePageToken - No response received from server")
+            return
+
+        if not response.get('changes', None):
+            self.SendlToLog(2, "RunSyncSincePageToken - No changes since %s" % last_page_token)
+            return
+        else:
+            self.SendlToLog(3, "RunSyncSincePageToken - retrieved change list since %s" % last_page_token)
+            for change in response.get('changes', []):
+                fid = change.get('fileId')
+                fmeta = change.get('file', {})
+                mime_type = fmeta.get('mimeType')
+
+                self.SendlToLog(3, "RunSyncSincePageToken - FID %s changed (%s)" % (fid, fmeta.get('mimeType')))
+                if change.get('removed', None) is False:
+                    #The file/folder hasn't been permanently delete. Probably trashed.
+                    fdata = self.GetFileMetaDataByID(fid)
+                    folder_path = self.GetFolderPathOnDriveByID(fid)
+                    finpath = self.mirror_directory + folder_path
+
+                    self.SendlToLog(3, "Change detected in %s" % finpath)
+
+                    if fdata.get('trashed', None) is True:
+                        self.SendlToLog(3, "File/Folder has been moved to trash")
+                        #TODO: Handle remove errors and log them
+                        if mime_type == 'application/vnd.google-apps.folder':
+                            if os.path.exists(finpath):
+                                self.SendlToLog(3, "Deleting local directory %s" % finpath)
+                                shutil.rmtree(finpath, True)
+                                self.driveTree.DeleteFolder(fid, self.TrashFileCallback)
+                                self.SendlToLog(3, "Folder %s deleted from local directory tree" % folder_path)
+                                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                            else:
+                                self.SendlToLog(3, "Directory %s deleted on remote. Not present locally." % finpath)
+                        else:
+                            if os.path.exists(finpath):
+                                self.SendlToLog(3, "File %s is trashed on remote. Deleting local copy." % finpath)
+                                os.remove(finpath)
+                            else:
+                                self.SendlToLog(3, "File %s is trashed on remote. Doesn't exist locally" % finpath)
+                    else:
+                        self.SendlToLog(3, "Neither trashed not removed means its modified or new file/folder")
+                        if mime_type == 'application/vnd.google-apps.folder':
+                            self.SendlToLog(3, "%s is a folder" % fdata.get('name'))
+                            if not os.path.exists(finpath):
+                                self.SendlToLog(3, "Creating new directory: %s" % finpath)
+                                os.mkdir(finpath, 0o0755)
+                                parent = fdata.get('parents')[0]
+                                self.SendlToLog(3, "Parent: %s Root: %s" % (parent, self.root_id))
+                                if parent == self.root_id:
+                                    pf = 'root'
+                                else:
+                                    pf = fdata.get('parents')[0]
+                                self.SendlToLog(3, "Parent: %s ID: %s Name: %s" % (pf, fdata.get('id'), fdata.get('name')))
+                                self.driveTree.AddFolder(pf, fdata.get('id'), fdata.get('name'), fdata)
+                                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                            else:
+                                self.SendlToLog(3, "Directory %s already exists. Not creating" % finpath)
+                        else:
+                            self.SendlToLog(3, "Download")
+                            self.SendlToLog(3, "Downloading File %s to %s" % (fdata.get('name'), os.path.dirname(finpath)))
+                            self.DownloadFileByObject(fdata, os.path.dirname(finpath))
+                else:
+                    self.SendlToLog(3, "File/Folder has been permanently deleted on remote!")
+                    #TODO: Handle remove errors and log them
+                    if mime_type == 'application/vnd.google-apps.folder':
+                        if os.path.exists(finpath):
+                            self.SendlToLog(3,
+                                            "Directory %s permanently deleted from remote. Deleting locally with all children"
+                                            % finpath)
+                            rmtree(finpath, True)
+                    else:
+                        if os.path.exists(finpath):
+                            self.SendlToLog(3, "File %s exists. Deleting local copy" % finpath)
+                            os.remove(finpath)
+                        else:
+                            self.SendlToLog(3, "File %s permanently delete on remote. Doesn't exist locally." % finpath)
+
+
+    # This function will do a full sync, going file by file
+    def RunFullSync(self):
+        try:
+            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
+            self.SendlToLog(3,"###############################################")
+            self.SendlToLog(3,"Start - Syncing remote directory")
+            self.SendlToLog(3,"###############################################")
+            for d in self.sync_selection:
+                if d[0] != 'root':
+                    #Root folder files are always synced (not recursive)
+                    self.SyncRemoteDirectory('root', '', False)
+                    #Then sync current folder (recursively)
+                    self.SyncRemoteDirectory(d[1], d[0])
+                else:
+                    #Sync Root folder (recursively)
+                    self.SyncRemoteDirectory('root', '')
+            self.SendlToLog(3,"###############################################")
+            self.SendlToLog(3,"End - Syncing remote directory")
+            self.SendlToLog(3,"###############################################\n")
+            #Sync local directory only initially. The rest should be taken care by
+            #the observer.
+            self.SendlToLog(3,"###############################################")
+            self.SendlToLog(3,"Start - Syncing local directory")
+            self.SendlToLog(3,"###############################################")
+            self.SyncLocalDirectory()
+            self.SendlToLog(3,"###############################################")
+            self.SendlToLog(3,"End - Syncing local directory")
+            self.SendlToLog(3,"###############################################\n")
+            self.initial_run = False
+
+            if self.updates_done:
+                self.SendlToLog(2,"Sync - Some changes were done. Triggering drive usage calculation.\n")
+                self.usageCalculateEvent.set()
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
+        except InternetNotReachable as e:
+            self.SendlToLog(2, "SyncThread - run - Internet not reachable")
+            GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
+            raise e
+        except:
+            self.SendlToLog(1, "SyncThread - run - Unknown exception")
+            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
+            raise
+
     def run(self):
         refresh_connection = 10
+        try:
+            root_meta = self.GetFileMetaDataByID('root')
+        except:
+            self.SendlToLog(1, "Failed to get root directory ID")
+            exit()
+        else:
+            self.root_id = root_meta.get('id')
+            self.SendlToLog(2, "Root folder ID: %s" % self.root_id)
+
         while not self.shutting_down:
             self.SendlToLog(3, "SyncThread - run - Waiting for Sync to be enabled")
             self.syncRunning.wait()
@@ -1430,47 +1680,29 @@ class GoSyncModel(object):
 
             self.SendlToLog(2, "SyncThread - run - Staring the sync now")
             self.syncing_now = True
-            try:
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_STARTED, None)
-                self.SendlToLog(3,"###############################################")
-                self.SendlToLog(3,"Start - Syncing remote directory")
-                self.SendlToLog(3,"###############################################")
-                for d in self.sync_selection:
-                    if d[0] != 'root':
-                        #Root folder files are always synced (not recursive)
-                        self.SyncRemoteDirectory('root', '', False)
-                        #Then sync current folder (recursively)
-                        self.SyncRemoteDirectory(d[1], d[0])
-                    else:
-                        #Sync Root folder (recursively)
-                        self.SyncRemoteDirectory('root', '')
-                self.SendlToLog(3,"###############################################")
-                self.SendlToLog(3,"End - Syncing remote directory")
-                self.SendlToLog(3,"###############################################\n")
-                #Sync local directory only initially. The rest should be taken care by
-                #the observer.
-                self.SendlToLog(3,"###############################################")
-                self.SendlToLog(3,"Start - Syncing local directory")
-                self.SendlToLog(3,"###############################################")
-                self.SyncLocalDirectory()
-                self.SendlToLog(3,"###############################################")
-                self.SendlToLog(3,"End - Syncing local directory")
-                self.SendlToLog(3,"###############################################\n")
-                self.initial_run = False
-
-                if self.updates_done:
-                    self.SendlToLog(2,"Sync - Some changes were done. Triggering drive usage calculation.\n")
-                    self.usageCalculateEvent.set()
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, 0)
-            except InternetNotReachable:
-                self.SendlToLog(2, "SyncThread - run - Internet not reachable")
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
-                self.sync_lock.release()
-                self.syncing_now = False
-                continue
-            except:
-                self.SendlToLog(1, "SyncThread - run - Unknown exception")
-                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_DONE, -1)
+            if self.last_page_token is None:
+                try:
+                    self.RunFullSync()
+                except InternetNotReachable:
+                    self.sync_lock.release()
+                    self.syncing_now = False
+                    continue
+                except:
+                    self.SendlToLog(1, "SyncThread - run - Unknown exception during full sync")
+                else:
+                    self.last_page_token = self.GetStartPageToken()
+                    self.SendlToLog(2, "SyncThread - run - last token %s" % self.last_page_token)
+                    self.SaveConfig()
+            else:
+                try:
+                    #self.SendlToLog(2, "SyncThread - run - Syncing from token %d" % self.last_page_token)
+                    self.RunSyncSincePageToken(self.last_page_token)
+                except:
+                    self.SendlToLog(1, "SyncThread - run - Unkown exception during sync after page token %s" % self.last_page_token)
+                else:
+                    self.last_page_token = self.GetStartPageToken()
+                    self.SaveConfig()
+                    pickle.dump(self.driveTree, open(self.tree_pickle_file, "wb"))
 
             self.SendlToLog(2, "SyncThread - run - Sync done")
             self.sync_lock.release()
