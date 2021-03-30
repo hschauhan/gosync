@@ -671,6 +671,8 @@ class GoSyncModel(object):
                                                   {"Uploading File: %s" % self.GetRelativeFolder(file_path, False)})
                 self.SendlToLog(3, "Uploading File: %s" % self.GetRelativeFolder(file_path, False))
                 self.UploadFile(file_path)
+                self.last_page_token = self.GetStartPageToken()
+                self.SaveConfig()
         except InternetNotReachable as ie:
             self.SendlToLog(1, "UploadObservedFile - Internet is down")
         except:
@@ -750,6 +752,8 @@ class GoSyncModel(object):
                         self.SendlToLog(3, "Could not delete file from local tree");
                 self.SendlToLog(3, "Now deleting remote file %s" % ftd)
                 self.TrashFile(ftd)
+                self.last_page_token = self.GetStartPageToken()
+                self.SaveConfig()
             except RegularFileTrashFailed:
                 self.SendlToLog(1,{"TRASH_FILE: Failed to move file %s to trash\n" % drive_path})
                 raise
@@ -779,7 +783,6 @@ class GoSyncModel(object):
                                     addParents=did,
                                     removeParents=sid,
                                     fields='id, parents').execute()
-
         except:
             self.logger.exception("move failed\n")
 
@@ -807,6 +810,8 @@ class GoSyncModel(object):
                     self.SendlToLog(3,"MovingFile() ")
                     self.MoveFile(ftm, df, sf)
                     self.SendlToLog(3,"done\n")
+                    self.last_page_token = self.GetStartPageToken()
+                    self.SaveConfig()
                 except (Unkownerror, FileMoveFailed):
                     self.SendlToLog(1,"MovedObservedFile: Failed\n")
                     return
@@ -963,8 +968,10 @@ class GoSyncModel(object):
         self.SendlToLog(3, "GetFolderOnDriveByID: %s" % fid)
         try:
             response = self.GetFileMetaDataByID(fid);
+        except FileNotFound:
+            self.SendlToLog(1, "GetFolderNameOnDriveByID - File not found")
         except:
-            self.SendlToLog(3, "GetFolderNameOnDriveByID - Gadbad hai bhai")
+            self.SendlToLog(1, "GetFolderNameOnDriveByID - Gadbad hai bhai")
             return None
         else:
             self.SendlToLog(3, "Got Response: name: %s" % response['name'])
@@ -1098,13 +1105,17 @@ class GoSyncModel(object):
 
     def GetFileMetaDataByID(self, fid):
         retry = 0
-        self.SendlToLog(3, "GetFileMetaDataByID - FileID: %s" % fid)
         while True:
+            self.SendlToLog(3, "GetFileMetaDataByID - FileID: %s" % fid)
             try:
                 response = self.drive.files().get(fileId=fid,
                                                   fields='id, name, mimeType, trashed, parents, size, md5Checksum').execute()
             except HttpError as error:
-                self.SendlToLog(1, "GetFileMetaDataByID - %s\n", error.resp.reason)
+                self.SendlToLog(1, "HTTP Error: %d" % error.resp.status)
+                if error.resp.status == 404:
+                    self.SendlToLog(1, "HTTP Error: raising FileNotFound()")
+                    raise FileNotFound()
+
                 if error.resp.status in [403, 500, 503, 429]:
                     self.SendlToLog(1, "GetFileMetaDataByID - Status: %d. (Retrying)\n", error.resp.status)
                     time.sleep(5)
@@ -1127,7 +1138,6 @@ class GoSyncModel(object):
                         raise FileListQueryFailed()
             else:
                 self.SendlToLog(3, "GetFileMetaDataByID - Got something")
-                self.SendlToLog(3, "GetFileMetaDataByID - FileID: %s Name: %s" % (fid, response.get('name')))
                 return response
 
     def MakeFileListQuery(self, query):
@@ -1501,32 +1511,56 @@ class GoSyncModel(object):
                                          space='drive').execute()
 
     def RunSyncSincePageToken(self, last_page_token):
-        folder_del_pending = []
+        # Where to pick if we are shutdown in between
+        restart_token = last_page_token
 
-        self.SendlToLog(3, "RunSyncSincePageToken - Querying changes since %s" % last_page_token)
-        response = self.drive.changes().list(pageToken=last_page_token).execute()
+        def AbortingDownload():
+            return not self.syncRunning.is_set() or self.shutting_down
 
-        if response is None:
-            self.SendlToLog(2, "RunSyncSincePageToken - No response received from server")
-            return
+        cur_token = last_page_token
+        while True:
+            self.SendlToLog(3, "*************** RunSyncSincePageToken - Querying changes since %s *******************" % cur_token)
+            response = self.drive.changes().list(pageToken=cur_token).execute()
 
-        if not response.get('changes', None):
-            self.SendlToLog(2, "RunSyncSincePageToken - No changes since %s" % last_page_token)
-            return
-        else:
+            if not response.get('changes', []):
+                self.SendlToLog(2, "RunSyncSincePageToken - No changes after %s" % cur_token)
+                return cur_token
+
             self.SendlToLog(3, "RunSyncSincePageToken - retrieved change list since %s" % last_page_token)
+
             for change in response.get('changes', []):
                 fid = change.get('fileId')
                 fmeta = change.get('file', {})
                 mime_type = fmeta.get('mimeType')
 
+                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+                                                  {"Checking %s" % fmeta.get('name')})
+
+                try:
+                    fdata = self.GetFileMetaDataByID(fid)
+                except FileNotFound:
+                    self.SendlToLog(1, "Error 404: %s (Name: %s)" % (fid, fmeta.get('name')))
+                    continue
+                except:
+                    self.SendlToLog(1, "Error while fetching information from remote for file.")
+                    continue
+
+                try:
+                    folder_path = self.GetFolderPathOnDriveByID(fid)
+                except:
+                    self.SendlToLog(1, "Error getting folder path on drive")
+                    continue
+
+                finpath = self.mirror_directory + folder_path
+
+                if AbortingDownload():
+                    self.SendlToLog(3, "RunSyncSincePageToken - GoSync is shutting down will start from %s" % token_done)
+                    # Restart later from last token onwards i.e. the changes we are processing now.
+                    return restart_token
+
                 self.SendlToLog(3, "RunSyncSincePageToken - FID %s changed (%s)" % (fid, fmeta.get('mimeType')))
                 if change.get('removed', None) is False:
                     #The file/folder hasn't been permanently delete. Probably trashed.
-                    fdata = self.GetFileMetaDataByID(fid)
-                    folder_path = self.GetFolderPathOnDriveByID(fid)
-                    finpath = self.mirror_directory + folder_path
-
                     self.SendlToLog(3, "Change detected in %s" % finpath)
 
                     if fdata.get('trashed', None) is True:
@@ -1552,6 +1586,8 @@ class GoSyncModel(object):
                         if mime_type == 'application/vnd.google-apps.folder':
                             self.SendlToLog(3, "%s is a folder" % fdata.get('name'))
                             if not os.path.exists(finpath):
+                                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+                                                                  {"New Directory: %s" % self.GetRelativeFolder(finpath, True)})
                                 self.SendlToLog(3, "Creating new directory: %s" % finpath)
                                 os.mkdir(finpath, 0o0755)
                                 parent = fdata.get('parents')[0]
@@ -1567,8 +1603,11 @@ class GoSyncModel(object):
                                 self.SendlToLog(3, "Directory %s already exists. Not creating" % finpath)
                         else:
                             self.SendlToLog(3, "Download")
-                            self.SendlToLog(3, "Downloading File %s to %s" % (fdata.get('name'), os.path.dirname(finpath)))
-                            self.DownloadFileByObject(fdata, os.path.dirname(finpath))
+                            if not self.IsGoogleDocument(fdata):
+                                self.SendlToLog(3, "Downloading File %s to %s" % (fdata.get('name'), os.path.dirname(finpath)))
+                                self.DownloadFileByObject(fdata, os.path.dirname(finpath))
+                            else:
+                                self.SendlToLog(3, "File %s is a google doc. Not downloading" % fdata.get('name'))
                 else:
                     self.SendlToLog(3, "File/Folder has been permanently deleted on remote!")
                     #TODO: Handle remove errors and log them
@@ -1577,14 +1616,26 @@ class GoSyncModel(object):
                             self.SendlToLog(3,
                                             "Directory %s permanently deleted from remote. Deleting locally with all children"
                                             % finpath)
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+                                                              {"%s deleted on remote." % self.GetRelativeFolder(finpath, True)})
+
                             rmtree(finpath, True)
                     else:
                         if os.path.exists(finpath):
                             self.SendlToLog(3, "File %s exists. Deleting local copy" % finpath)
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+                                                  {"Deleting: %s" % self.GetRelativeFolder(finpath, False)})
                             os.remove(finpath)
                         else:
                             self.SendlToLog(3, "File %s permanently delete on remote. Doesn't exist locally." % finpath)
 
+
+            restart_token = cur_token
+            cur_token = response.get('nextPageToken')
+            if not cur_token:
+                return response.get('newStartPageToken')
+            else:
+                continue
 
     # This function will do a full sync, going file by file
     def RunFullSync(self):
@@ -1631,6 +1682,7 @@ class GoSyncModel(object):
 
     def run(self):
         refresh_connection = 10
+
         try:
             root_meta = self.GetFileMetaDataByID('root')
         except:
@@ -1695,12 +1747,11 @@ class GoSyncModel(object):
                     self.SaveConfig()
             else:
                 try:
-                    #self.SendlToLog(2, "SyncThread - run - Syncing from token %d" % self.last_page_token)
-                    self.RunSyncSincePageToken(self.last_page_token)
+                    self.SendlToLog(2, "SyncThread - run - Syncing from token %s" % self.last_page_token)
+                    self.last_page_token = self.RunSyncSincePageToken(self.last_page_token)
                 except:
                     self.SendlToLog(1, "SyncThread - run - Unkown exception during sync after page token %s" % self.last_page_token)
                 else:
-                    self.last_page_token = self.GetStartPageToken()
                     self.SaveConfig()
                     pickle.dump(self.driveTree, open(self.tree_pickle_file, "wb"))
 
