@@ -56,8 +56,9 @@ class FolderEmpty(Exception):
     """Folder is empty"""
 class FolderNotFound(RuntimeError):
     """Folder on Google Drive was not found"""
-    def __init__(self, err_folder):
+    def __init__(self, err_folder, err_folder_id = None):
         self.e_folder = err_folder
+        self.e_folder_id = err_folder_id
     def __str__(self):
         return self.e_folder
 
@@ -111,6 +112,8 @@ class GoSyncModel(object):
         self.sync_interval = 1800
         self.shutting_down = False
         self.use_system_notif = True
+        self.force_full_sync = False
+        self.auto_add_new_folders = False
 
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
         self.credential_file = os.path.join(self.config_path, "credentials.json")
@@ -359,6 +362,10 @@ class GoSyncModel(object):
                         self.use_system_notif = self.config_dict['UseSystemNotif']
                         if self.use_system_notif is None:
                             self.use_system_notif = True
+
+                        self.auto_add_new_folders = self.config_dict['AutoAddFolders']
+                        if self.auto_add_new_folders is None:
+                            self.auto_add_new_folders = False
                     except:
                         pass
                 except:
@@ -377,10 +384,13 @@ class GoSyncModel(object):
         self.config_dict['BaseMirrorDirectory'] = self.base_mirror_directory
         self.config_dict['SyncInterval'] = self.sync_interval
         self.config_dict['UseSystemNotif'] = self.use_system_notif
+        self.config_dict['AutoAddFolders'] = self.auto_add_new_folders
         self.config_dict['LogLevel'] = self.Log_Level
         self.config_dict['LastPageToken'] = self.last_page_token
         if not self.sync_selection:
             self.config_dict['Sync Selection'] = [['root', '']]
+        else:
+            self.config_dict['Sync Selection'] = self.sync_selection
 
         self.account_dict[self.user_email] = self.config_dict
 
@@ -642,6 +652,7 @@ class GoSyncModel(object):
                 try:
                     f = self.LocateFolderOnDrive(dirpath)
                     self.CreateRegularFile(file_path, f['id'], newfile)
+                    self.SendlToLog(3, "Success")
                 except FolderNotFound:
                     # We are coming from premise that upload comes as part
                     # of observer. So before notification of this file's
@@ -651,6 +662,10 @@ class GoSyncModel(object):
                     # Folder not found? That cannot happen. Can it?
                     self.SendlToLog(1, "CreateRegularFile: Failed to upload %s in %s" % file_path, dir_path)
                     raise RegularFileUploadFailed()
+                except:
+                    self.SendlToLog(1, "CreateRegularFile: Unknown error in uploading file")
+                else:
+                    self.SendlToLog(3, "File uploaded successfully")
         else:
             self.CreateDirectoryByPath(file_path)
 
@@ -671,8 +686,13 @@ class GoSyncModel(object):
                                                   {"Uploading File: %s" % self.GetRelativeFolder(file_path, False)})
                 self.SendlToLog(3, "Uploading File: %s" % self.GetRelativeFolder(file_path, False))
                 self.UploadFile(file_path)
-                self.last_page_token = self.GetStartPageToken()
+                self.SendlToLog(3, "Upload success")
+                self.SendlToLog(3, "Saving new token")
+                new_token = self.GetStartPageToken()
+                if new_token:
+                    self.last_page_token = new_token
                 self.SaveConfig()
+                self.SendlToLog(3, "New Token: %s" % self.last_page_token)
         except InternetNotReachable as ie:
             self.SendlToLog(1, "UploadObservedFile - Internet is down")
         except:
@@ -722,11 +742,11 @@ class GoSyncModel(object):
 
     def TrashFileCallback(self, Folder):
         self.SendlToLog(3, "TrashFileCallback: Folder: %s being deleted" % Folder.GetPath())
-        if Folder and Folder.GetPath() in self.sync_selection:
-            self.sync_selection.remove(Folder.GetPath())
+        if Folder and self.IsDirectoryMonitored(Folder.GetPath()):
+            self.RemoveSyncSelectionByID(Folder.GetId())
             self.SendlToLog(3, "TrashFileCallback: Folder %s deleted from sync list" % Folder.GetPath())
         else:
-            self.SendlToLog(3, "Folder being deleted is not in sync list")
+            self.SendlToLog(3, "TrashFileCallback: Folder being deleted is not in sync list")
 
     def TrashObservedFile(self, file_path):
         if self.IsSyncRunning():
@@ -747,12 +767,16 @@ class GoSyncModel(object):
                                     % (self.GetRelativeFolder(file_path), ftd['id']))
                     try:
                         self.driveTree.DeleteFolder(ftd['id'], self.TrashFileCallback)
+                        self.SendlToLog(3, "DriveTree folder deleted. Updating sync tree in UI")
                         GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                        self.SendlToLog(3, "Signal sent to UI")
                     except:
                         self.SendlToLog(3, "Could not delete file from local tree");
                 self.SendlToLog(3, "Now deleting remote file %s" % ftd)
                 self.TrashFile(ftd)
-                self.last_page_token = self.GetStartPageToken()
+                new_token = self.GetStartPageToken()
+                if new_token:
+                    self.last_page_token = new_token
                 self.SaveConfig()
             except RegularFileTrashFailed:
                 self.SendlToLog(1,{"TRASH_FILE: Failed to move file %s to trash\n" % drive_path})
@@ -810,7 +834,9 @@ class GoSyncModel(object):
                     self.SendlToLog(3,"MovingFile() ")
                     self.MoveFile(ftm, df, sf)
                     self.SendlToLog(3,"done\n")
-                    self.last_page_token = self.GetStartPageToken()
+                    new_token = self.GetStartPageToken()
+                    if new_token:
+                        self.last_page_token = new_token
                     self.SaveConfig()
                 except (Unkownerror, FileMoveFailed):
                     self.SendlToLog(1,"MovedObservedFile: Failed\n")
@@ -1259,13 +1285,17 @@ class GoSyncModel(object):
         else:
             return False
 
-    def IsDirectoryMonitored(self, dir):
+    def IsDirectoryMonitored(self, dir, absolute_path=True):
         if self.IsMonitoringAll():
             self.SendlToLog(3, "IsDirectoryMonitored: Complete monitoring is on! (%s)" % dir)
             return True
 
         try:
-            dirpath = dir.split(self.mirror_directory+'/')[1]
+            if absolute_path:
+                dirpath = dir.split(self.mirror_directory+'/')[1]
+            else:
+                dirpath = dir
+
             for d in self.sync_selection:
                 if d[0] == dirpath:
                     self.SendlToLog(3, "IsDirectoryMonitored: Match: SL: %s dirpath: %s" % (d[0], dirpath))
@@ -1493,17 +1523,24 @@ class GoSyncModel(object):
         for d in self.sync_selection:
             if d[0] != 'root':
                 try:
+                    self.SendlToLog(3, "validate_sync_settings - Locating %s on remote" % d[0])
                     f = self.LocateFolderOnDrive(d[0])
                     if f['id'] != d[1]:
-                        raise FolderNotFound(d[0])
+                        self.SendlToLog(1, "validate_sync_settings - %s not found on remote" % d[0])
+                        raise FolderNotFound(d[0], d[1])
+                    self.SendlToLog(3, "validate_sync_settings - Found")
                     break
                 except FolderNotFound:
-                    raise FolderNotFound(d[0])
+                    self.SendlToLog(1, "validate_sync_settings - %s not found" % d[0])
+                    raise FolderNotFound(d[0], d[1])
                 except:
+                    self.SendlToLog(1, "validate_sync_settings - unknown error")
                     raise
             else:
                 if d[1] != '':
-                    raise FolderNotFound("Root SHA not right")
+                    self.SendlToLog(1, "validate_sync_settings - sync selection set to root but SHA is not right")
+                    raise FolderNotFound('root', 'root')
+        self.SendlToLog(3, "Sync settings looks good")
 
 #### run (Sync Local and Remote Directory)
     def GetChangeListSinceLastToken(self, last_token):
@@ -1574,6 +1611,10 @@ class GoSyncModel(object):
                                 self.SendlToLog(3, "Folder %s deleted from local directory tree" % folder_path)
                                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
                             else:
+                                try:
+                                    self.driveTree.DeleteFolder(fid, self.TrashFileCallback)
+                                except:
+                                    pass
                                 self.SendlToLog(3, "Directory %s deleted on remote. Not present locally." % finpath)
                         else:
                             if os.path.exists(finpath):
@@ -1585,22 +1626,27 @@ class GoSyncModel(object):
                         self.SendlToLog(3, "Neither trashed not removed means its modified or new file/folder")
                         if mime_type == 'application/vnd.google-apps.folder':
                             self.SendlToLog(3, "%s is a folder" % fdata.get('name'))
-                            if not os.path.exists(finpath):
-                                GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
-                                                                  {"New Directory: %s" % self.GetRelativeFolder(finpath, True)})
-                                self.SendlToLog(3, "Creating new directory: %s" % finpath)
-                                os.mkdir(finpath, 0o0755)
-                                parent = fdata.get('parents')[0]
-                                self.SendlToLog(3, "Parent: %s Root: %s" % (parent, self.root_id))
-                                if parent == self.root_id:
-                                    pf = 'root'
+                            if self.auto_add_new_folders:
+                                if not os.path.exists(finpath):
+                                    GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
+                                                                      {"New Directory: %s" % self.GetRelativeFolder(finpath, True)})
+                                    self.SendlToLog(3, "Creating new directory: %s" % finpath)
+                                    os.mkdir(finpath, 0o0755)
+                                    parent = fdata.get('parents')[0]
+                                    self.SendlToLog(3, "Parent: %s Root: %s" % (parent, self.root_id))
+                                    if parent == self.root_id:
+                                        pf = 'root'
+                                    else:
+                                        pf = fdata.get('parents')[0]
+                                    self.SendlToLog(3, "Parent: %s ID: %s Name: %s" % (pf, fdata.get('id'), fdata.get('name')))
+                                    self.driveTree.AddFolder(pf, fdata.get('id'), fdata.get('name'), fdata)
+                                    self.sync_selection.append([folder_path, fdata.get('id')])
+                                    GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                                    self.SaveConfig()
                                 else:
-                                    pf = fdata.get('parents')[0]
-                                self.SendlToLog(3, "Parent: %s ID: %s Name: %s" % (pf, fdata.get('id'), fdata.get('name')))
-                                self.driveTree.AddFolder(pf, fdata.get('id'), fdata.get('name'), fdata)
-                                GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                                    self.SendlToLog(3, "Directory %s already exists. Not creating" % finpath)
                             else:
-                                self.SendlToLog(3, "Directory %s already exists. Not creating" % finpath)
+                                self.SendlToLog(3, "New folder %s on remote but auto add setting is disabled. Not creating" % folder_path)
                         else:
                             self.SendlToLog(3, "Download")
                             if not self.IsGoogleDocument(fdata):
@@ -1729,10 +1775,12 @@ class GoSyncModel(object):
                 self.syncRunning.clear()
                 self.sync_lock.release()
                 continue
+            else:
+                self.SendlToLog(3, "Sync selections looks good")
 
             self.SendlToLog(2, "SyncThread - run - Staring the sync now")
             self.syncing_now = True
-            if self.last_page_token is None:
+            if self.last_page_token is None or self.force_full_sync == True:
                 try:
                     self.RunFullSync()
                 except InternetNotReachable:
@@ -1745,10 +1793,15 @@ class GoSyncModel(object):
                     self.last_page_token = self.GetStartPageToken()
                     self.SendlToLog(2, "SyncThread - run - last token %s" % self.last_page_token)
                     self.SaveConfig()
+                self.force_full_sync = False
             else:
                 try:
                     self.SendlToLog(2, "SyncThread - run - Syncing from token %s" % self.last_page_token)
                     self.last_page_token = self.RunSyncSincePageToken(self.last_page_token)
+                except InternetNotReachable:
+                    self.sync_lock.release()
+                    self.syncing_now = False
+                    continue
                 except:
                     self.SendlToLog(1, "SyncThread - run - Unkown exception during sync after page token %s" % self.last_page_token)
                 else:
@@ -1949,6 +2002,11 @@ class GoSyncModel(object):
         self.usageCalculateEvent.set()
         self.SendlToLog(3,"ForceDriveUsageCalculation: Marked")
 
+    def RemoveSyncSelectionByID(self, folder_id):
+        for d in self.sync_selection:
+            if d[1] == folder_id:
+                self.sync_selection.remove(d)
+
     def RemoveSyncSelection(self, folder):
         if folder == 'root':
             #Cannote remove root
@@ -2017,12 +2075,22 @@ class GoSyncModel(object):
         self.use_system_notif = new
         self.SaveConfig()
 
+    def SetAutoSyncSelection(self, newval):
+        self.auto_add_new_folders = newval
+        self.SaveConfig()
+
+    def GetAutoSyncSelection(self):
+        return self.auto_add_new_folders
+
     def GetLogLevel(self):
         return self.Log_Level
 
     def SetLogLevel(self, new):
         self.Log_Level = new
         self.SaveConfig()
+
+    def SetForceFullSync(self, val=True):
+        self.force_full_sync = val
 
 class FileModificationNotifyHandler(PatternMatchingEventHandler):
     patterns = ["*"]

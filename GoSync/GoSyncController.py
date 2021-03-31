@@ -45,6 +45,7 @@ except (ImportError, ValueError):
 ID_SYNC_TOGGLE = wx.NewId()
 ID_SYNC_NOW = wx.NewId()
 ID_RECALC_USAGE = wx.NewId()
+ID_DO_FULL_SYNC = wx.NewId()
 
 mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX) ^ (wx.RESIZE_BORDER)
 HERE=os.path.abspath(os.path.dirname(__file__))
@@ -143,6 +144,9 @@ class GoSyncController(wx.Frame):
                                                   icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_SYNC_NOW)
         self.rcu = self.CreateMenuItem(menu, 'Recalculate Drive Usage', self.OnRecalculateDriveUsage,
                                        icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_RECALC_USAGE)
+        menu.AppendSeparator()
+        self.rcu = self.CreateMenuItem(menu, 'Do Full Sync', self.OnDoFullSync,
+                                       icon=os.path.join(HERE, 'resources/sync-menu.png'), id=ID_DO_FULL_SYNC)
 
         menu.AppendSeparator()
         self.CreateMenuItem(menu, 'A&bout', self.OnAbout, os.path.join(HERE, 'resources/info.png'))
@@ -281,6 +285,9 @@ class GoSyncController(wx.Frame):
 
         self.sync_model.ForceDriveUsageCalculation()
 
+
+    def OnDoFullSync(self, event):
+        self.sync_model.SetForceFullSync(True)
 
     def OnSyncTimer(self, event):
         unicode_string = event.data.pop()
