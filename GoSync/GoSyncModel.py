@@ -122,7 +122,6 @@ class GoSyncModel(object):
         # This entails that drive cache (self.driveTree) is *always* in sync
         # with the remote
         self.check_local_against_dc = True
-        self.delete_folders_not_in_synclist = False
         self.in_conflict_server_presides = True
 
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
@@ -336,13 +335,6 @@ class GoSyncModel(object):
                         else:
                             self.SendlToLog(2, "In conflict, local presides.")
 
-                    if self.config_dict['DeleteNonSyncFolders']:
-                        self.delete_folders_not_in_synclist = self.config_dict['DeleteNonSyncFolders']
-                        if self.delete_folders_not_in_synclist:
-                            self.SendlToLog(2, "Files/Folders not in synclist will be removed")
-                        else:
-                            self.SendlToLog(2, "Files/Folder not in synclist will not be removed")
-
                     if self.config_dict['LogLevel']:
                         lvl = self.config_dict['LogLevel']
                         if lvl > 3:
@@ -412,7 +404,6 @@ class GoSyncModel(object):
         self.config_dict['LogLevel'] = self.Log_Level
         self.config_dict['LastPageToken'] = self.last_page_token
         self.config_dict['ServerPresides'] = self.in_conflict_server_presides
-        self.config_dict['DeleteNonSyncFolders'] = self.delete_folders_not_in_synclist
         if not self.sync_selection:
             self.config_dict['Sync Selection'] = [['root', '']]
         else:
@@ -1060,11 +1051,6 @@ class GoSyncModel(object):
 
         self.SendlToLog(3,"### SyncLocalDirectory: - Sync Started")
         for root, dirs, files in os.walk(self.mirror_directory):
-            if not self.IsDirectoryMonitored(root) and self.delete_folders_not_in_synclist:
-                self.SendlToLog(2, "SyncLocalDirectory - Directory %s is not monitored. Deleting Locally" % root)
-                shutil.rmtree(root, ignore_errors=False, onerror=None)
-                continue
-
             for names in files:
                 while True:
                     if not self.syncRunning.is_set() or self.shutting_down:
@@ -1872,6 +1858,9 @@ class GoSyncModel(object):
                 try:
                     self.SendlToLog(2, "SyncThread - run - Syncing from token %s" % self.last_page_token)
                     self.last_page_token = self.RunSyncSincePageToken(self.last_page_token)
+                    self.SendlToLog(2, "SyncThread - run - Syncing local folders")
+                    self.SyncLocalDirectory()
+                    self.SendlToLog(2, "SyncThread - run - All sync done successfully")
                 except InternetNotReachable:
                     self.sync_lock.release()
                     self.syncing_now = False
@@ -2173,13 +2162,6 @@ class GoSyncModel(object):
         if val > 1:
             return
         self.in_conflict_server_presides = val
-        self.SaveConfig()
-
-    def GetFolderNotInSLPref(self):
-        return self.delete_folders_not_in_synclist
-
-    def SetFolderNotInSLPref(self, val):
-        self.delete_folders_not_in_synclist = val
         self.SaveConfig()
 
 class FileModificationNotifyHandler(PatternMatchingEventHandler):
