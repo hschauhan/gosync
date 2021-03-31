@@ -23,12 +23,18 @@ class SettingsPage(wx.Panel):
         self.notif_cb = wx.CheckBox(self, -1, 'Use system notifications for updates')
         #nfss = new folder sync selection
         self.nfss = wx.CheckBox(self, -1, 'Automatically add new folders on remote to the sync selection')
+        #conflict resolution
+        self.cp = wx.CheckBox(self, -1, 'In conflict, server takes presidence')
+        self.df = wx.CheckBox(self, -1, 'Delete local files/folders that are not in sync selection')
+
         self.cb.SetValue(True)
         self.notif_cb.SetValue(True)
         self.nfss.SetValue(False)
         self.cb.Bind(wx.EVT_CHECKBOX, self.AutoSyncSetting)
         self.notif_cb.Bind(wx.EVT_CHECKBOX, self.OnUseSystemNotif)
         self.nfss.Bind(wx.EVT_CHECKBOX, self.OnNfss)
+        self.cp.Bind(wx.EVT_CHECKBOX, self.OnPresidence)
+        self.df.Bind(wx.EVT_CHECKBOX, self.OnFolderSLPref)
         self.log_choice = wx.Choice(self, -1, choices=["Error", "Information", "Debugging"], name="LevelChoice")
         self.log_choice.SetSelection(self.sync_model.GetLogLevel()-1)
         self.lct = wx.StaticText(self, -1, "Debug Level: ")
@@ -76,6 +82,8 @@ class SettingsPage(wx.Panel):
         osizer.Add(self.cb, 0, wx.ALL, 0)
         osizer.Add(self.notif_cb, 1, wx.ALL, 0)
         osizer.Add(self.nfss, 2, wx.ALL, 0)
+        osizer.Add(self.cp, 3, wx.ALL, 0)
+        osizer.Add(self.df, 4, wx.ALL, 0)
         osizer.Add(si_spin_sizer, 3, wx.ALL, 0)
         osizer.Add(debug_sizer, 4, wx.ALL, 5)
         osizer.AddSpacer(30)
@@ -90,6 +98,8 @@ class SettingsPage(wx.Panel):
         self.cb.SetValue(self.sync_model.GetAutoSyncState())
         self.notif_cb.SetValue(self.sync_model.GetUseSystemNotifSetting())
         self.nfss.SetValue(self.sync_model.GetAutoSyncSelection())
+        self.cp.SetValue(self.sync_model.GetPresidence())
+        self.df.SetValue(self.sync_model.GetFolderNotInSLPref())
 
     def OnDebugLogChoice(self, event):
         lvl = self.log_choice.GetSelection()+1
@@ -107,12 +117,22 @@ class SettingsPage(wx.Panel):
         else:
             self.sync_model.SetUseSystemNotifSetting(False)
 
+    def OnPresidence(self, event):
+        if self.cp.GetValue():
+            self.sync_model.SetPresidence(True)
+        else:
+            self.sync_model.SetPresidence(False)
+
+    def OnFolderSLPref(self, event):
+        if self.df.GetValue():
+            self.sync_model.SetFolderNotInSLPref(True)
+        else:
+            self.sync_model.SetFolderNotInSLPref(False)
+
     def OnNfss(self, event):
         if self.nfss.GetValue():
-            print("Setting auto to true")
             self.sync_model.SetAutoSyncSelection(True)
         else:
-            print("Setting auto to false")
             self.sync_model.SetAutoSyncSelection(False)
 
     def OnSyncIntervalSelect(self, event):

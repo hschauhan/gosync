@@ -132,23 +132,18 @@ class GoogleDriveTree(object):
         return self.FindFolderInParent(self.root_node, id)
 
     def FindFileByPath(self, rel_path, parent=None):
-        print("Relative Path: %s" % rel_path)
         if parent == None:
-            print("Using parent as root")
             parent = self.root_node
 
         for f in parent.GetChildren():
             if f.IsFile() and f.GetPath() == rel_path:
-                print("File with Path: %s" % f.GetPath())
                 return f
 
             if not f.IsFile():
-                print("Folder %s" % f.GetName())
                 ret = self.FindFileByPath(rel_path, f)
                 if ret:
                     return ret
 
-        print("No File found")
         return None
 
     def AddFile(self, parent, file_id, file_name, data):

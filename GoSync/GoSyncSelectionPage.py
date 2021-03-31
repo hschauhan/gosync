@@ -94,6 +94,9 @@ class SelectionPage(wx.Panel):
         #    self.sync_model.RemoveSyncSelection(folder)
 
     def MakeDriveTree(self, gnode, tnode):
+        if gnode.IsFile():
+            return
+
         file_list = gnode.GetChildren()
         for f in file_list:
             nnode = self.dstc.AppendItem(tnode, f.GetName(), ct_type=1)
