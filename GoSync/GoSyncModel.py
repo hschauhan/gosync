@@ -78,6 +78,10 @@ class AuthenticationFailed(RuntimeError):
     """Failed to authenticate with google"""
 class InternetNotReachable(RuntimeError):
     """Failed to connect to the internet"""
+class FilesSame(Exception):
+    """The two files are same"""
+class FilesInConflict(Exception):
+    """The remote and local files have different MD5SUM """
 
 audio_file_mimelist = ['audio/mpeg', 'audio/x-mpeg-3', 'audio/mpeg3', 'audio/aiff', 'audio/x-aiff', 'audio/m4a', 'audio/mp4', 'audio/flac', 'audio/mp3']
 movie_file_mimelist = ['video/mp4', 'video/x-msvideo', 'video/mpeg', 'video/flv', 'video/quicktime', 'video/mkv']
@@ -114,6 +118,12 @@ class GoSyncModel(object):
         self.use_system_notif = True
         self.force_full_sync = False
         self.auto_add_new_folders = False
+        # Check the local files in the drive cache instead of going to remote
+        # This entails that drive cache (self.driveTree) is *always* in sync
+        # with the remote
+        self.check_local_against_dc = True
+        self.delete_folders_not_in_synclist = False
+        self.in_conflict_server_presides = True
 
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
         self.credential_file = os.path.join(self.config_path, "credentials.json")
@@ -1034,7 +1044,7 @@ class GoSyncModel(object):
 
         self.SendlToLog(3,"### SyncLocalDirectory: - Sync Started")
         for root, dirs, files in os.walk(self.mirror_directory):
-            if not self.IsDirectoryMonitored(root):
+            if not self.IsDirectoryMonitored(root) and self.delete_folders_not_in_synclist:
                 self.SendlToLog(2, "SyncLocalDirectory - Directory %s is not monitored. Deleting Locally" % root)
                 shutil.rmtree(root, ignore_errors=False, onerror=None)
                 continue
@@ -1050,9 +1060,21 @@ class GoSyncModel(object):
                         dirpath = os.path.join(root, names)
                         drivepath = dirpath.split(self.mirror_directory+'/')[1]
                         self.SendlToLog(3,"SyncLocalDirectory: Checking Local File (%s)" % drivepath)
-                        f = self.LocateFileOnDrive(drivepath)
-                        self.SendlToLog(3,"SyncLocalDirectory: Skipping Local File (%s) same as Remote\n" % dirpath)
-                        break
+                        if not self.check_local_against_dc:
+                            f = self.LocateFileOnDrive(drivepath)
+                            md5sum = f['md5Checksum']
+                        else:
+                            f = self.driveTree.FindFileByPath(drivepath)
+                            f = f.GetData()
+
+                        self.SendlToLog(3, "SyncLocalDirectory: Found file drivepath: %s dirpath: %s" % (drivepath, dirpath))
+                        if f and self.HashOfFile(dirpath) == f['md5Checksum']:
+                            self.SendlToLog(3,"SyncLocalDirectory: Skipping Local File (%s) same as Remote\n" % dirpath)
+                            raise FilesSame()
+                        else:
+                            self.SendlToLog(3, "SyncLocalDirectory: File %s is in conflict with server" % dirpath)
+                            raise FilesInConflict()
+
                     except FileListQueryFailed:
                         # if the file list query failed, we can't delete the local file even if
                         # its gone in remote drive. Let the next sync come and take care of this
@@ -1070,6 +1092,17 @@ class GoSyncModel(object):
                             else:
                                 time.sleep(5)
                                 continue
+                    except FilesSame:
+                        break
+                    except FilesInConflict:
+                        if self.in_conflict_server_presides:
+                            self.SendlToLog(2, "SyncLocalDirectory: CONFLICT: User wants server to preside")
+                            self.SendlToLog(2, "SyncLocalDirectory: Downloading file %s: (root: %s)" % (dirpath, root))
+                            #self.DownloadFileByObject(f, root)
+                        else:
+                            self.SendlToLog(2, "SyncLocalDirectory: CONFLICT: User wants local to preside")
+                            self.SendlToLog(2, "SyncLocalDirectory: Uploading file %s: (root: %s)" % (dirpath, root))
+                            #self.UploadFile(dirpath)
                     except:
                         if os.path.exists(dirpath) and os.path.isfile(dirpath):
                             self.SendlToLog(2,"SyncLocalDirectory: Uploading Local File (%s) - Not in Remote\n" % dirpath)
@@ -1380,6 +1413,7 @@ class GoSyncModel(object):
                 self.SendlToLog(3,'DownloadFileByObject: Skipping File (%s) - same as remote.\n' % abs_filepath)
                 return
             else:
+                #TODO: This is a BUG. If the remote and local are different pull either pull from remote or upload local (Add precedence here)
                 self.SendlToLog(2,"DownloadFileByObject: Skipping File (%s) - Local and Remote - Same Name but Different Content.\n" % abs_filepath)
         else:
             self.SendlToLog(3,'DownloadFileByObject: Download Started - File (%s), size (%s)' % (abs_filepath, file_obj['size']))
@@ -1508,6 +1542,7 @@ class GoSyncModel(object):
                     self.SendlToLog(3,"SyncRemoteDirectory: Checking file (%s)" % f['name'])
                     if not self.IsGoogleDocument(f):
                         self.DownloadFileByObject(f, os.path.join(self.mirror_directory, pwd))
+                        self.driveTree.AddFile(parent, f['id'], f['name'], f)
                     else:
                         self.SendlToLog(3,"SyncRemoteDirectory: Skipping file (%s) is a google document.\n" % f['name'])
         except InternetNotReachable:
@@ -1550,13 +1585,13 @@ class GoSyncModel(object):
     def RunSyncSincePageToken(self, last_page_token):
         # Where to pick if we are shutdown in between
         restart_token = last_page_token
-
+        page = 1
         def AbortingDownload():
             return not self.syncRunning.is_set() or self.shutting_down
 
         cur_token = last_page_token
         while True:
-            self.SendlToLog(3, "*************** RunSyncSincePageToken - Querying changes since %s *******************" % cur_token)
+            self.SendlToLog(3, "*** RunSyncSincePageToken - Page %d (Token: %s)  ***" % (page, cur_token))
             response = self.drive.changes().list(pageToken=cur_token).execute()
 
             if not response.get('changes', []):
@@ -1650,8 +1685,16 @@ class GoSyncModel(object):
                         else:
                             self.SendlToLog(3, "Download")
                             if not self.IsGoogleDocument(fdata):
+                                parent = fdata.get('parents')[0]
+                                self.SendlToLog(3, "Parent: %s Root: %s" % (parent, self.root_id))
+                                if parent == self.root_id:
+                                    pf = 'root'
+                                else:
+                                    pf = fdata.get('parents')[0]
+
                                 self.SendlToLog(3, "Downloading File %s to %s" % (fdata.get('name'), os.path.dirname(finpath)))
                                 self.DownloadFileByObject(fdata, os.path.dirname(finpath))
+                                self.driveTree.AddFile(pf, fdata.get('id'), fdata.get('name'), fdata)
                             else:
                                 self.SendlToLog(3, "File %s is a google doc. Not downloading" % fdata.get('name'))
                 else:
@@ -1681,6 +1724,7 @@ class GoSyncModel(object):
             if not cur_token:
                 return response.get('newStartPageToken')
             else:
+                page += 1
                 continue
 
     # This function will do a full sync, going file by file

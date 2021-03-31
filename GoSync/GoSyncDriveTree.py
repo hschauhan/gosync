@@ -18,6 +18,43 @@
 
 import os, threading, logging
 
+class DriveFile(object):
+    def __init__(self, parent, id, name, data=None):
+        self.id = id
+        self.parent = parent
+        self.data = data
+        self.name = name
+
+    def IsFile(self):
+        return True
+
+    def SetData(self, data):
+        self.data = data
+
+    def GetData(self):
+        return self.data
+
+    def GetParent(self):
+        return self.parent
+
+    def GetId(self):
+        return self.id
+
+    def GetName(self):
+        return self.name
+
+    def GetPath(self):
+        cpath =''
+        if self.parent is not None:
+            cpath = self.parent.GetPath()
+
+        if self.parent is None:
+            path = os.path.join(cpath, '')
+        else:
+            path = os.path.join(cpath, self.GetName())
+
+        return path
+
 class DriveFolder(object):
     def __init__(self, parent, id, name, data=None):
         self.children = []
@@ -25,6 +62,9 @@ class DriveFolder(object):
         self.parent = parent
         self.data = data
         self.name = name
+
+    def IsFile(self):
+        return False
 
     def SetData(self, data):
         self.data = data
@@ -75,9 +115,10 @@ class GoogleDriveTree(object):
             if f.GetId() == id:
                 return f
 
-            ret = self.FindFolderInParent(f, id)
-            if ret:
-                return ret
+            if not f.IsFile():
+                ret = self.FindFolderInParent(f, id)
+                if ret:
+                    return ret
 
         return None
 
@@ -86,6 +127,40 @@ class GoogleDriveTree(object):
             return self.root_node
         else:
             return self.FindFolderInParent(self.root_node, id)
+
+    def FindFile(self, id):
+        return self.FindFolderInParent(self.root_node, id)
+
+    def FindFileByPath(self, rel_path, parent=None):
+        print("Relative Path: %s" % rel_path)
+        if parent == None:
+            print("Using parent as root")
+            parent = self.root_node
+
+        for f in parent.GetChildren():
+            if f.IsFile() and f.GetPath() == rel_path:
+                print("File with Path: %s" % f.GetPath())
+                return f
+
+            if not f.IsFile():
+                print("Folder %s" % f.GetName())
+                ret = self.FindFileByPath(rel_path, f)
+                if ret:
+                    return ret
+
+        print("No File found")
+        return None
+
+    def AddFile(self, parent, file_id, file_name, data):
+        if not parent:
+            return None
+
+        pnode = self.FindFolder(parent)
+        if self.FindFile(file_id):
+            return
+
+        cnode = DriveFile(pnode, file_id, file_name, data)
+        pnode.AddChild(cnode)
 
     def AddFolder(self, parent, folder_id, folder_name, data):
         if not parent:
