@@ -117,7 +117,6 @@ class GoSyncModel(object):
         self.shutting_down = False
         self.use_system_notif = True
         self.force_full_sync = False
-        self.auto_add_new_folders = False
         # Check the local files in the drive cache instead of going to remote
         # This entails that drive cache (self.driveTree) is *always* in sync
         # with the remote
@@ -378,10 +377,6 @@ class GoSyncModel(object):
                         self.use_system_notif = self.config_dict['UseSystemNotif']
                         if self.use_system_notif is None:
                             self.use_system_notif = True
-
-                        self.auto_add_new_folders = self.config_dict['AutoAddFolders']
-                        if self.auto_add_new_folders is None:
-                            self.auto_add_new_folders = False
                     except:
                         pass
                 except:
@@ -400,7 +395,6 @@ class GoSyncModel(object):
         self.config_dict['BaseMirrorDirectory'] = self.base_mirror_directory
         self.config_dict['SyncInterval'] = self.sync_interval
         self.config_dict['UseSystemNotif'] = self.use_system_notif
-        self.config_dict['AutoAddFolders'] = self.auto_add_new_folders
         self.config_dict['LogLevel'] = self.Log_Level
         self.config_dict['LastPageToken'] = self.last_page_token
         self.config_dict['ServerPresides'] = self.in_conflict_server_presides
@@ -1427,20 +1421,27 @@ class GoSyncModel(object):
             try:
                 if (total_size == 0) :
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
+                    self.SendlToLog(3, "Downloading zero size file %s" % fd)
                     open(abs_filepath, 'a').close()
                     break
                 elif (total_size < LargeFileSize) :
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_BUSY_STARTED, {'Downloading %s' % fd})
+                    self.SendlToLog(3, "Downloading small file %s" % fd)
                     request = self.drive.files().get_media(fileId=file_obj['id'])
+                    self.SendlToLog(3, "Got media request")
                     fh = io.FileIO(abs_filepath, 'wb')
+                    self.SendlToLog(3, "FileIO created")
                     downloader = MediaIoBaseDownload(fh, request)
+                    self.SendlToLog(3, "Downloader aquired")
                     done = False
                     while done is False:
                         if AbortingDownload() :
                             break
                         else :
+                            self.SendlToLog(3, "Downloading next chunk")
                             status, done = downloader.next_chunk()
                     fh.close()
+                    self.SendlToLog(3, "Closing file")
                     break
                 else :
                     # Downloading large files : 100M chunk size
@@ -1649,68 +1650,88 @@ class GoSyncModel(object):
                 self.SendlToLog(3, "RunSyncSincePageToken - FID %s changed (%s)" % (fid, fmeta.get('mimeType')))
                 if change.get('removed', None) is False:
                     #The file/folder hasn't been permanently delete. Probably trashed.
-                    self.SendlToLog(3, "Change detected in %s" % finpath)
+                    self.SendlToLog(3, "RunSyncSincePageToken - Change detected in %s" % finpath)
 
                     if fdata.get('trashed', None) is True:
-                        self.SendlToLog(3, "File/Folder has been moved to trash")
+                        self.SendlToLog(3, "RunSyncSincePageToken - File/Folder has been moved to trash")
                         #TODO: Handle remove errors and log them
                         if mime_type == 'application/vnd.google-apps.folder':
                             if os.path.exists(finpath):
-                                self.SendlToLog(3, "Deleting local directory %s" % finpath)
+                                self.SendlToLog(3, "RunSyncSincePageToken - Deleting local directory %s" % finpath)
                                 shutil.rmtree(finpath, True)
+                                ##
+                                #TrashFileCallback should delete the directory from the selection list
+                                ##
                                 self.driveTree.DeleteFolder(fid, self.TrashFileCallback)
-                                self.SendlToLog(3, "Folder %s deleted from local directory tree" % folder_path)
+                                self.SendlToLog(3, "RunSyncSincePageToken - Folder %s deleted from local directory tree" % folder_path)
+                                #
+                                # Since the folder would have been deleted from sync selection, this notification
+                                # would tell UI to update the screen
+                                #
+                                self.SendlToLog(3, "RunSyncSincePageToken - Signalling to update the UI")
                                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
                             else:
                                 try:
                                     self.driveTree.DeleteFolder(fid, self.TrashFileCallback)
-                                except:
+                                except NameError as ne:
+                                    self.SendlToLog("RunSyncSincePageToken - NameError %s" % ne)
+                                else:
+                                    self.SendlToLog(3, "RunSyncSincePageToken - unknown error in deleting folder from drive tree cache")
                                     pass
-                                self.SendlToLog(3, "Directory %s deleted on remote. Not present locally." % finpath)
+                                self.SendlToLog(3, "RunSyncSincePageToken - Directory %s deleted on remote. Not present locally." % finpath)
                         else:
                             if os.path.exists(finpath):
-                                self.SendlToLog(3, "File %s is trashed on remote. Deleting local copy." % finpath)
+                                self.SendlToLog(3, "RunSyncSincePageToken - File %s is trashed on remote. Deleting local copy." % finpath)
                                 os.remove(finpath)
                             else:
-                                self.SendlToLog(3, "File %s is trashed on remote. Doesn't exist locally" % finpath)
+                                self.SendlToLog(3, "RunSyncSincePageToken - File %s is trashed on remote. Doesn't exist locally" % finpath)
                     else:
-                        self.SendlToLog(3, "Neither trashed not removed means its modified or new file/folder")
+                        self.SendlToLog(3, "RunSyncSincePageToken - Neither trashed not removed means its modified or new file/folder")
                         if mime_type == 'application/vnd.google-apps.folder':
-                            self.SendlToLog(3, "%s is a folder" % fdata.get('name'))
-                            if self.auto_add_new_folders:
+                            self.SendlToLog(3, "RunSyncSincePageToken - %s is a folder" % fdata.get('name'))
+                            #
+                            # Add this directory if the parent directory is monitored
+                            #
+                            if self.IsDirectoryMonitored(os.path.dirname(finpath)):
                                 if not os.path.exists(finpath):
                                     GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE,
                                                                       {"New Directory: %s" % self.GetRelativeFolder(finpath, True)})
-                                    self.SendlToLog(3, "Creating new directory: %s" % finpath)
+                                    self.SendlToLog(3, "RunSyncSincePageToken - Creating new directory: %s" % finpath)
                                     os.mkdir(finpath, 0o0755)
+                                    self.sync_selection.append([folder_path, fdata.get('id')])
+                                    self.SaveConfig()
+                                else:
+                                    self.SendlToLog(3, "RunSyncSincePageToken - Directory %s already exists. Not creating" % finpath)
+                            else:
+                                self.SendlToLog(3, "RunSyncSincePageToken - New folder %s on remote but auto add setting is disabled and sync all is disabled. Not creating" % folder_path)
+                            self.SendlToLog(3, "RunSyncSincePageToken - Adding new found folder %s to drive cache" % finpath)
+                            parent = fdata.get('parents')[0]
+                            self.SendlToLog(3, "RunSyncSincePageToken - Parent: %s Root: %s" % (parent, self.root_id))
+                            if parent == self.root_id:
+                                pf = 'root'
+                            else:
+                                pf = fdata.get('parents')[0]
+                            self.SendlToLog(3, "RunSyncSincePageToken - Parent: %s ID: %s Name: %s" % (pf, fdata.get('id'), fdata.get('name')))
+                            self.driveTree.AddFolder(pf, fdata.get('id'), fdata.get('name'), fdata)
+                            GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
+                            pickle.dump(self.driveTree, open(self.tree_pickle_file, "wb"))
+                            self.SendlToLog(3, "RunSyncSincePageToken - ok")
+                        else:
+                            self.SendlToLog(3, "Download")
+                            if not self.IsGoogleDocument(fdata):
+                                if self.IsDirectoryMonitored(os.path.dirname(finpath)):
                                     parent = fdata.get('parents')[0]
                                     self.SendlToLog(3, "Parent: %s Root: %s" % (parent, self.root_id))
                                     if parent == self.root_id:
                                         pf = 'root'
                                     else:
                                         pf = fdata.get('parents')[0]
-                                    self.SendlToLog(3, "Parent: %s ID: %s Name: %s" % (pf, fdata.get('id'), fdata.get('name')))
-                                    self.driveTree.AddFolder(pf, fdata.get('id'), fdata.get('name'), fdata)
-                                    self.sync_selection.append([folder_path, fdata.get('id')])
-                                    GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
-                                    self.SaveConfig()
-                                else:
-                                    self.SendlToLog(3, "Directory %s already exists. Not creating" % finpath)
-                            else:
-                                self.SendlToLog(3, "New folder %s on remote but auto add setting is disabled. Not creating" % folder_path)
-                        else:
-                            self.SendlToLog(3, "Download")
-                            if not self.IsGoogleDocument(fdata):
-                                parent = fdata.get('parents')[0]
-                                self.SendlToLog(3, "Parent: %s Root: %s" % (parent, self.root_id))
-                                if parent == self.root_id:
-                                    pf = 'root'
-                                else:
-                                    pf = fdata.get('parents')[0]
 
-                                self.SendlToLog(3, "Downloading File %s to %s" % (fdata.get('name'), os.path.dirname(finpath)))
-                                self.DownloadFileByObject(fdata, os.path.dirname(finpath))
-                                self.driveTree.AddFile(pf, fdata.get('id'), fdata.get('name'), fdata)
+                                        self.SendlToLog(3, "Downloading File %s to %s" % (fdata.get('name'), os.path.dirname(finpath)))
+                                        self.DownloadFileByObject(fdata, os.path.dirname(finpath))
+                                        self.driveTree.AddFile(pf, fdata.get('id'), fdata.get('name'), fdata)
+                                else:
+                                    self.SendlToLog(2, "Folder %s not in sync selection. Therefore, file %s not being downloaded" % (os.path.dirname(finpath), fdata.get('name')))
                             else:
                                 self.SendlToLog(3, "File %s is a google doc. Not downloading" % fdata.get('name'))
                 else:
@@ -2137,13 +2158,6 @@ class GoSyncModel(object):
     def SetUseSystemNotifSetting(self, new):
         self.use_system_notif = new
         self.SaveConfig()
-
-    def SetAutoSyncSelection(self, newval):
-        self.auto_add_new_folders = newval
-        self.SaveConfig()
-
-    def GetAutoSyncSelection(self):
-        return self.auto_add_new_folders
 
     def GetLogLevel(self):
         return self.Log_Level
