@@ -47,7 +47,7 @@ ID_SYNC_NOW = wx.NewId()
 ID_RECALC_USAGE = wx.NewId()
 ID_DO_FULL_SYNC = wx.NewId()
 
-mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.CLOSE_BOX) & (~wx.MAXIMIZE_BOX) ^ (wx.RESIZE_BORDER)
+mainWindowStyle = wx.DEFAULT_FRAME_STYLE & (~wx.MAXIMIZE_BOX) ^ (wx.RESIZE_BORDER)
 HERE=os.path.abspath(os.path.dirname(__file__))
 
 class PageAccount(wx.Panel):
