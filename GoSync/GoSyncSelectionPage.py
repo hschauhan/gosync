@@ -99,6 +99,8 @@ class SelectionPage(wx.Panel):
 
         file_list = gnode.GetChildren()
         for f in file_list:
+            if f.IsFile():
+                continue
             nnode = self.dstc.AppendItem(tnode, f.GetName(), ct_type=1)
             self.dstc.SetPyData(nnode, f)
             self.MakeDriveTree(f, nnode)
