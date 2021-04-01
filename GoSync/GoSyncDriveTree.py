@@ -171,9 +171,16 @@ class GoogleDriveTree(object):
     def __DeleteFolder(self, folder_id, FolderDeleteCallback):
         pnode = self.FindFolder(folder_id)
 
+        if pnode is None:
+            raise NameError("__DeleteFolder: Parent folder %s not found" % folder_id)
+
         if not pnode.GetChildren():
-            if FolderDeleteCallback:
-                FolderDeleteCallback(pnode)
+            try:
+                if FolderDeleteCallback:
+                    FolderDeleteCallback(pnode)
+            except:
+                #The folder delete callback should handle things properly
+                pass
             pnode.GetParent().DeleteChild(pnode)
             return
 
@@ -187,16 +194,25 @@ class GoogleDriveTree(object):
             if not pnode.GetChildren():
                 break
             for child in pnode.GetChildren():
-                self.__DeleteFolder(child.GetId(), FolderDeleteCallback)
-                break
+                try:
+                    self.__DeleteFolder(child.GetId(), FolderDeleteCallback)
+                except:
+                    raise
+                else:
+                    break
 
     #This is really ugly. But while deleting child, the child list
     #keeps modifying and for loop goes for a toss. The "recursive"
     #function doesn't delete the root. So second call to get rid of
     #root node as well.
     def DeleteFolder(self, folder_id, FolderDeleteCallback=None):
-        self.__DeleteFolder(folder_id, FolderDeleteCallback)
-        self.__DeleteFolder(folder_id, FolderDeleteCallback)
+        try:
+            self.__DeleteFolder(folder_id, FolderDeleteCallback)
+            self.__DeleteFolder(folder_id, FolderDeleteCallback)
+        except:
+            raise
+        else:
+            return
 
     def PrintTree(self, folder_id):
         pnode = self.FindFolder(folder_id)
