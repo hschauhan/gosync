@@ -28,14 +28,14 @@ except (ImportError, ValueError):
 import sys, os, wx, ntpath, threading, math, webbrowser
 from threading import Timer
 try :
-	from .GoSyncModel import GoSyncModel, ClientSecretsNotFound
+	from .GoSyncModel import GoSyncModel, ClientSecretsNotFound, InternetNotReachable
 	from .defines import *
 	from .DriveUsageBox import DriveUsageBox
 	from .GoSyncEvents import *
 	from .GoSyncSelectionPage import SelectionPage
 	from .GoSyncSettingPage import SettingsPage
 except (ImportError, ValueError):
-	from GoSyncModel import GoSyncModel, ClientSecretsNotFound
+	from GoSyncModel import GoSyncModel, ClientSecretsNotFound, InternetNotReachable
 	from defines import *
 	from DriveUsageBox import DriveUsageBox
 	from GoSyncEvents import *
@@ -121,6 +121,12 @@ class GoSyncController(wx.Frame):
                 webbrowser.open(CLIENT_SECRET_HELP_SITE, new=1, autoraise=True)
 
             sys.exit(1)
+        except InternetNotReachable:
+            dial = wx.MessageDialog(None, 'GoSync cannot connect to the Internet.\nPlease check your internet connection.',
+                                    'Error', wx.OK | wx.ICON_EXCLAMATION)
+            res = dial.ShowModal()
+            sys.exit(1)
+
         except:
             dial = wx.MessageDialog(None, 'GoSync failed to initialize\n',
                                     'Error', wx.OK | wx.ICON_EXCLAMATION)

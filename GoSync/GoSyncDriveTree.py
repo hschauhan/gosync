@@ -128,6 +128,21 @@ class GoogleDriveTree(object):
         else:
             return self.FindFolderInParent(self.root_node, id)
 
+    def FindFolderByPath(self, rel_path, parent=None):
+        if parent == None:
+            parent = self.root_node
+
+        for f in parent.GetChildren():
+            if not f.IsFile() and f.GetPath() == rel_path:
+                return f
+
+            if not f.IsFile():
+                ret = self.FindFolderByPath(rel_path, f)
+                if ret:
+                    return ret
+
+        return None
+
     def FindFile(self, id):
         return self.FindFolderInParent(self.root_node, id)
 

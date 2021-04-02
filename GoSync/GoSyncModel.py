@@ -82,6 +82,8 @@ class FilesSame(Exception):
     """The two files are same"""
 class FilesInConflict(Exception):
     """The remote and local files have different MD5SUM """
+class FileMissingInLocalCache(Exception):
+    """Raised when the file is missing in the local cache"""
 
 audio_file_mimelist = ['audio/mpeg', 'audio/x-mpeg-3', 'audio/mpeg3', 'audio/aiff', 'audio/x-aiff', 'audio/m4a', 'audio/mp4', 'audio/flac', 'audio/mp3']
 movie_file_mimelist = ['video/mp4', 'video/x-msvideo', 'video/mpeg', 'video/flv', 'video/quicktime', 'video/mkv']
@@ -122,6 +124,7 @@ class GoSyncModel(object):
         # with the remote
         self.check_local_against_dc = True
         self.in_conflict_server_presides = True
+        self.new_sync_selection = []
 
         self.config_path = os.path.join(os.environ['HOME'], ".gosync")
         self.credential_file = os.path.join(self.config_path, "credentials.json")
@@ -152,6 +155,9 @@ class GoSyncModel(object):
         self.logger.addHandler(fh)
 
         self.SendlToLog(3,"Initialize - Started Initialize")
+
+        if not self.IsInternetReachable():
+            raise InternetNotReachable()
 
         if not os.path.exists(self.config_path):
             os.mkdir(self.config_path, 0o0755)
@@ -565,15 +571,25 @@ class GoSyncModel(object):
         except FileListQueryFailed:
             raise FileListQueryFailed()
 
+    def UpdateRegularFile(self, fid, file_path):
+        self.SendlToLog(3, "UpdateRegularFile - File Path %s File ID: %s" % (file_path, fid))
+        filename = self.PathLeaf(file_path)
+        media = MediaFileUpload(file_path, resumable=True)
+        uf = self.drive.files().create(fileId=fid,
+                                       media_body=media,
+                                       fields='id, name, parents, mimeType, size, md5Checksum').execute()
+        return uf
+
     def CreateRegularFile(self, file_path, parent='root', uploaded=False):
-        self.SendlToLog(3,"Create file %s\n" % file_path)
+        self.SendlToLog(3,"CreateRegularFile: Create file %s\n" % file_path)
         filename = self.PathLeaf(file_path)
         file_metadata = {'name': filename}
         file_metadata['parents'] = [parent]
         media = MediaFileUpload(file_path, resumable=True)
         upfile = self.drive.files().create(body=file_metadata,
                                     media_body=media,
-                                    fields='id').execute()
+                                    fields='id, name, parents, mimeType, size, md5Checksum').execute()
+        return upfile
 
     def GetRelativeFolder(self, file_path, IsFolder=False):
         if IsFolder:
@@ -632,19 +648,19 @@ class GoSyncModel(object):
         self.SendlToLog(3, "UploadFile: %s" % file_path)
         if os.path.isfile(file_path):
             drivepath = file_path.split(self.mirror_directory+'/')[1]
-            self.SendlToLog(3,"file: %s drivepath is %s\n" % (file_path, drivepath))
+            self.SendlToLog(3,"UploadFile: file: %s drivepath is %s\n" % (file_path, drivepath))
             try:
                 f = self.LocateFileOnDrive(drivepath)
-                self.SendlToLog(3,'Found file %s on remote (dpath: %s)\n' % (f['name'], drivepath))
+                self.SendlToLog(3,'UploadFile: Found file %s on remote (dpath: %s)\n' % (f['name'], drivepath))
                 newfile = False
-                self.SendlToLog(3,'Checking if they are same... ')
+                self.SendlToLog(3,'UploadFile: Checking if they are same... ')
                 if f['md5Checksum'] == self.HashOfFile(file_path):
                     self.SendlToLog(3,'yes\n')
                     return
                 else:
                     self.SendlToLog(3,'no\n')
             except (FileNotFound, FolderNotFound):
-                self.SendlToLog(3,"A new file!\n")
+                self.SendlToLog(3,"UploadFile: A new file!\n")
                 newfile = True
             except:
                 raise
@@ -662,7 +678,7 @@ class GoSyncModel(object):
             else:
                 try:
                     f = self.LocateFolderOnDrive(dirpath)
-                    self.CreateRegularFile(file_path, f['id'], newfile)
+                    fil = self.CreateRegularFile(file_path, f['id'], newfile)
                     self.SendlToLog(3, "Success")
                 except FolderNotFound:
                     # We are coming from premise that upload comes as part
@@ -677,6 +693,7 @@ class GoSyncModel(object):
                     self.SendlToLog(1, "CreateRegularFile: Unknown error in uploading file")
                 else:
                     self.SendlToLog(3, "File uploaded successfully")
+                    return fil
         else:
             self.CreateDirectoryByPath(file_path)
 
@@ -1048,101 +1065,174 @@ class GoSyncModel(object):
             for names in files:
                 while True:
                     if not self.syncRunning.is_set() or self.shutting_down:
-                        self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
+                        self.SendlToLog(3,"SyncLocalDirectory: - file - Sync has been paused. Aborting.\n")
                         return
 
                     GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Checking Local: %s" % names})
                     try:
                         dirpath = os.path.join(root, names)
                         drivepath = dirpath.split(self.mirror_directory+'/')[1]
-                        self.SendlToLog(3,"SyncLocalDirectory: Checking Local File (%s)" % drivepath)
+                        self.SendlToLog(3,"SyncLocalDirectory: - file - Checking Local File (%s)" % drivepath)
                         if not self.check_local_against_dc:
                             f = self.LocateFileOnDrive(drivepath)
                             md5sum = f['md5Checksum']
+                            parent = f['parents'][0]
                         else:
                             f = self.driveTree.FindFileByPath(drivepath)
-                            f = f.GetData()
+                            if not f:
+                                self.SendlToLog(3, "SyncLocalDirectory: - file - File %s is missing in local cache. Querying Remote." % dirpath)
+                                while True:
+                                    try:
+                                        f = self.LocateFileOnDrive(drivepath)
+                                    except FileListQueryFailed:
+                                        self.SendlToLog(3, "SyncLocalDirectory: - file - File list query failed. Aborting")
+                                        return
+                                    except InternetNotReachable:
+                                        self.SendlToLog(2, "SyncLocalDirectory: - file - Network is down!\n")
+                                        GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
+                                        while True:
+                                            if self.IsInternetReachable():
+                                                GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 0)
+                                                self.SendlToLog(2, "SyncLocalDirectory: - file - Network is up!\n")
+                                                break
+                                            else:
+                                                time.sleep(5)
+                                                continue
+                                            continue
+                                    except FileNotFound:
+                                        self.SendlToLog(3, "SyncLocalDirectory: - file - File missing in local cache and in remote")
+                                        raise
+                                    else:
+                                        self.SendlToLog(3, "SyncLocalDirectory: - file - File missing in cache found in remote")
+                                        parent = f.get('parents')[0]
+                                        if parent == self.root_id:
+                                            parent = 'root'
+                                        self.SendlToLog(3, "SyncLocalDirectory: - file - Cache miss for %s but found in remote. Adding to cache" % drivepath)
+                                        self.SendlToLog(3, "SyncLocalDirectory: - file - Add file to drive cache: Parent: %s FID: %s name: %s" % (parent, f['id'], f['name']))
+                                        self.driveTree.AddFile(parent, f.get('id'), f.get('name'), f)
+                                        self.SendlToLog(3, "SyncLocalDirectory: - file - File added to local cache")
+                                        break
+                            else:
+                                self.SendlToLog(3, "SyncLocalDirectory - file - File found in drive cache")
+                                parent = f.GetParent()
+                                f = f.GetData()
 
-                        self.SendlToLog(3, "SyncLocalDirectory: Found file drivepath: %s dirpath: %s" % (drivepath, dirpath))
+                        self.SendlToLog(3, "SyncLocalDirectory: - file - Found file drivepath: %s dirpath: %s" % (drivepath, dirpath))
                         if f and self.HashOfFile(dirpath) == f['md5Checksum']:
-                            self.SendlToLog(3,"SyncLocalDirectory: Skipping Local File (%s) same as Remote\n" % dirpath)
+                            self.SendlToLog(3,"SyncLocalDirectory: - file - Skipping Local File (%s) same as Remote\n" % dirpath)
                             raise FilesSame()
                         else:
-                            self.SendlToLog(3, "SyncLocalDirectory: File %s is in conflict with server" % dirpath)
+                            self.SendlToLog(3, "SyncLocalDirectory: - file - File %s is in conflict with server" % dirpath)
                             raise FilesInConflict()
 
                     except FileListQueryFailed:
                         # if the file list query failed, we can't delete the local file even if
                         # its gone in remote drive. Let the next sync come and take care of this
                         # Log the event though
-                        self.SendlToLog(2,"SyncLocalDirectory: Remote File (%s) Check Failed. Aborting.\n" % dirpath)
+                        self.SendlToLog(2,"SyncLocalDirectory: - file - Remote File (%s) Check Failed. Aborting.\n" % dirpath)
                         return
                     except InternetNotReachable:
-                        self.SendlToLog(2, "SyncLocalDirectory: Network is down!\n")
+                        self.SendlToLog(2, "SyncLocalDirectory: - file - Network is down!\n")
                         GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 1)
                         while True:
                             if self.IsInternetReachable():
                                 GoSyncEventController().PostEvent(GOSYNC_EVENT_INTERNET_UNREACHABLE, 0)
-                                self.SendlToLog(2, "SyncLocalDirectory: Network is up!\n")
+                                self.SendlToLog(2, "SyncLocalDirectory: - file - Network is up!\n")
                                 break
                             else:
                                 time.sleep(5)
                                 continue
                     except FilesSame:
+                        self.SendlToLog(3, "SyncLocalDirectory: - file - Files are same")
                         break
                     except FilesInConflict:
                         if self.in_conflict_server_presides:
-                            self.SendlToLog(2, "SyncLocalDirectory: CONFLICT: User wants server to preside")
-                            self.SendlToLog(2, "SyncLocalDirectory: Downloading file %s: (root: %s)" % (dirpath, root))
+                            self.SendlToLog(2, "SyncLocalDirectory: - file - CONFLICT: User wants server to preside")
+                            self.SendlToLog(2, "SyncLocalDirectory: - file - Downloading file %s: (root: %s)" % (dirpath, root))
                             self.DownloadFileByObject(f, root)
                         else:
-                            self.SendlToLog(2, "SyncLocalDirectory: CONFLICT: User wants local to preside")
-                            self.SendlToLog(2, "SyncLocalDirectory: Uploading file %s: (root: %s)" % (dirpath, root))
-                            self.UploadFile(dirpath)
+                            self.SendlToLog(2, "SyncLocalDirectory: - file - CONFLICT: User wants local to preside")
+                            self.SendlToLog(2, "SyncLocalDirectory: - file - Updating file %s: (root: %s) on server" % (dirpath, root))
+                            f = self.UpdateRegularFile(f['id'], dirpath)
+                        self.SendlToLog(3, "SyncLocalDirectory: - file - Adding file to local cache")
+                        self.driveTree.AddFile(f['parents'][0], f['id'], f['name'], f)
+                        self.SendlToLog(3, "- file - Done")
                         break
-                    except:
+                    except FileNotFound:
+                        self.SendlToLog(3, "SyncLocalDirectory: - file - File not found in localcache and remote")
                         if os.path.exists(dirpath) and os.path.isfile(dirpath):
-                            self.SendlToLog(2,"SyncLocalDirectory: Uploading Local File (%s) - Not in Remote\n" % dirpath)
+                            self.SendlToLog(2, "SyncLocalDirectory: - file - Uploading Local File (%s) - Not in Remote\n" % dirpath)
                             GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Uploading: %s" % self.GetRelativeFolder(dirpath, False)})
-                            self.UploadFile(dirpath)
+                            try:
+                                f = self.UploadFile(dirpath)
+                            except:
+                                self.SendlToLog(3, "SyncLocalDirectory: - file - Failed to upload file %s" % self.GetRelativeFolder(dirpath, False))
+                            else:
+                                parent = f.get('parents')[0]
+                                self.SendlToLog(3, "SyncLocalDirectory: - file - Add file to drive cache: Parent: %s FID: %s name: %s" % (parent, f['id'], f['name']))
+                                self.driveTree.AddFile(parent, f['id'], f['name'], f)
+                                self.SendlToLog(3, "SyncLocalDirectory: - file - File added to local cache")
                         break
+                    except FolderNotFound:
+                        self.SendlToLog(3, "SyncLocalDirectory: - file - Folder not found for path %s. Aborting" % self.GetRelativeFolder(dirpath, False))
+                        return
+                    except:
+                        self.SendlToLog(3, "SyncLocalDirectory: - file - Unknown exception")
 
             for names in dirs:
                 nf = None
                 if not self.syncRunning.is_set() or self.shutting_down:
-                    self.SendlToLog(3,"SyncLocalDirectory: Sync has been paused. Aborting.\n")
+                    self.SendlToLog(3,"SyncLocalDirectory: - dir - Sync has been paused. Aborting.\n")
                     return
 
                 if not self.IsDirectoryMonitored(names):
-                    self.SendlToLog(2, "SyncLocalDirectory - Directory %s is not monitored. Deleting Locally" % root)
+                    self.SendlToLog(2, "SyncLocalDirectory - dir - Directory %s is not monitored. Deleting Locally" % root)
                     shutil.rmtree(root, ignore_errors=False, onerror=None)
                     continue
 
-                self.SendlToLog(3, "Checking Local Folder: %s" % names)
+                self.SendlToLog(3, "SyncLocalDirectory - dir - Checking Local Folder: %s" % names)
 
                 GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Checking Local: %s" % names})
                 try:
                     dirpath = os.path.join(root, names)
                     drivepath = dirpath.split(self.mirror_directory+'/')[1]
-                    f = self.LocateFileOnDrive(drivepath)
+                    if not self.check_local_against_dc:
+                        f = self.LocateFileOnDrive(drivepath)
+                    else:
+                        self.SendlToLog(3, "SyncLocalDirectory: - dir - Checking folder %s in local cache" % drivepath)
+                        f = self.driveTree.FindFolderByPath(drivepath)
+                        f = f.GetData()
+                        self.SendlToLog(3, "SyncLocalDirectory: - dir - Found folder in local cache")
+
                 except FileListQueryFailed:
                     # if the file list query failed, we can't delete the local file even if
                     # its gone in remote drive. Let the next sync come and take care of this
                     # Log the event though
-                    self.SendlToLog(2,"SyncLocalDirectory: Remote Folder (%s) Check Failed. Aborting.\n" % dirpath)
+                    self.SendlToLog(2,"SyncLocalDirectory: - dir - Remote Folder (%s) Check Failed. Aborting.\n" % dirpath)
                     return
                 except InternetNotReachable:
-                    self.SendlToLog(1, "SyncLocalDirectory: Internet seems to be down!\n")
+                    self.SendlToLog(1, "SyncLocalDirectory: - dir - Internet seems to be down!\n")
                     raise
                 except:
                     if os.path.exists(dirpath) and os.path.isdir(dirpath):
-                        self.SendlToLog(3,"SyncLocalDirectory: Uploading Local Folder (%s) - Not in Remote\n" % dirpath)
+                        self.SendlToLog(3,"SyncLocalDirectory: - dir - Uploading Local Folder (%s) - Not in Remote\n" % dirpath)
                         try:
                             #GoSyncEventController().PostEvent(GOSYNC_EVENT_SYNC_UPDATE, {"Creating Folder: %s" % f['name']})
                             self.UploadFolder(dirpath)
                         except:
-                            self.SendlToLog(1, "SyncLocalDirectory: Failed to upload local folder (%s)" % dirpath)
+                            self.SendlToLog(1, "SyncLocalDirectory: - dir - Failed to upload local folder (%s)" % dirpath)
                             raise
+
+                        try:
+                            f = self.LocateFileOnDrive(dirpath)
+                        except:
+                            self.SendlToLog(1, "SyncLocalDirectory: - dir - Couldn't locate file after upload. Fold will not be added in drive cache.")
+                        else:
+                            parent = f['parents'][0]
+                            fid = f['id']
+                            fname = f['name']
+                            self.driveTree.AddFolder(parent, fid, fname, f)
+                            self.SendlToLog(3, "SyncLocalDirectory: - dir - Folder %s added to drive cache." % dirpath)
 
         self.SendlToLog(3,"### SyncLocalDirectory: - Sync Completed")
 
@@ -1548,18 +1638,18 @@ class GoSyncModel(object):
                     if not self.IsGoogleDocument(f):
                         _fp = os.path.join(self.mirror_directory, pwd, f['name'])
                         _ddr = os.path.join(self.mirror_directory, pwd)
-                        if self.HashOfFile(_fp) == f['md5Checksum']:
+                        if os.path.exists(_fp) and self.HashOfFile(_fp) == f['md5Checksum']:
                             self.SendlToLog(3,"SyncRemoteDirectory: File %s same as Remote\n" % _fp)
                         else:
-                            self.SendlToLog(3, "SyncLocalDirectory: File %s is in conflict with server" % _fp)
+                            self.SendlToLog(3, "SyncRemoteDirectory: File %s is in conflict with server" % _fp)
                             if self.in_conflict_server_presides:
-                                self.SendlToLog(2, "SyncLocalDirectory: CONFLICT: User wants server to preside")
-                                self.SendlToLog(2, "SyncLocalDirectory: Downloading file %s: (root: %s)" % (_fp, _ddr))
+                                self.SendlToLog(2, "SyncRemoteDirectory: CONFLICT: User wants server to preside")
+                                self.SendlToLog(2, "SyncRemoteDirectory: Downloading file %s: (root: %s)" % (_fp, _ddr))
                                 self.DownloadFileByObject(f, _ddr)
                                 self.driveTree.AddFile(parent, f['id'], f['name'], f)
                             else:
-                                self.SendlToLog(2, "SyncLocalDirectory: CONFLICT: User wants local to preside")
-                                self.SendlToLog(2, "SyncLocalDirectory: File %s: (root: %s) left to be uploaded at SyncLocal time" % (dirpath, root))
+                                self.SendlToLog(2, "SyncRemoteDirectory: CONFLICT: User wants local to preside")
+                                self.SendlToLog(2, "SyncRemoteDirectory: File %s: (root: %s) left to be uploaded at SyncLocal time" % (dirpath, root))
                     else:
                         self.SendlToLog(3,"SyncRemoteDirectory: Skipping file (%s) is a google document.\n" % f['name'])
         except InternetNotReachable:
@@ -1569,6 +1659,43 @@ class GoSyncModel(object):
             self.SendlToLog(1,"SyncRemoteDirectory: Failed to sync directory (%s)" % f['name'])
             raise
         self.SendlToLog(3,"### SyncRemoteDirectory: - Sync Completed - Remote Directory (%s) ... Recursive = %s\n" % (pwd, recursive))
+
+    def SyncNewSelections(self):
+        # No new selection
+        if not self.new_sync_selection:
+            self.SendlToLog(3, "SyncNewSelections -  nothing new")
+            return
+
+        try:
+            for selection in self.new_sync_selection:
+                try:
+                    abs_path = os.path.join(self.mirror_directory, selection[0])
+                    self.SendlToLog(3, "SyncNewSelections - New Selection: %s Absolute: %s" % (selection[0], abs_path))
+                    try:
+                        self.SendlToLog(3, "SyncNewSelections - Locating %s on remote" % selection[0])
+                        folder = self.LocateFolderOnDrive(selection[0])
+                    except FolderNotFound:
+                        self.SendlToLog(3, "SyncNewSelections - Failed to locate folder %s on remote" % selection[0])
+                        raise
+                    except:
+                        raise
+                    else:
+                        self.SendlToLog(3, "SyncNewSelections - Located folder")
+                        try:
+                            self.SendlToLog(3, "SyncNewSelections - Syncing remote...")
+                            self.SyncRemoteDirectory(folder['parents'][0], selection[0], False)
+                            self.SendlToLog(3, "SyncNewSelections - Remote sync for folder %s done" % selection[0])
+                        except:
+                            self.SendlToLog(3, "SyncNewSelection - Error syncing new selection")
+                except:
+                    self.SendlToLog(3, "SyncNewSelections - Unknown error syncing new selection")
+                else:
+                    self.SendlToLog(3, "SyncNewSelections - Good")
+                    continue
+        except:
+            raise
+        else:
+            self.new_sync_selection.clear()
 
 #### validate_sync_settings
     def validate_sync_settings(self):
@@ -1656,6 +1783,7 @@ class GoSyncModel(object):
                         self.SendlToLog(3, "RunSyncSincePageToken - File/Folder has been moved to trash")
                         #TODO: Handle remove errors and log them
                         if mime_type == 'application/vnd.google-apps.folder':
+                            self.SendlToLog(3, "RunSyncSincePageToken - %s is folder" % finpath)
                             if os.path.exists(finpath):
                                 self.SendlToLog(3, "RunSyncSincePageToken - Deleting local directory %s" % finpath)
                                 shutil.rmtree(finpath, True)
@@ -1671,11 +1799,12 @@ class GoSyncModel(object):
                                 self.SendlToLog(3, "RunSyncSincePageToken - Signalling to update the UI")
                                 GoSyncEventController().PostEvent(GOSYNC_EVENT_CALCULATE_USAGE_DONE, 0)
                             else:
+                                self.SendlToLog(3, "RunSyncSincePageToken - Local directory %s doesn't exist (%s)" % (finpath, folder_path))
                                 try:
                                     self.driveTree.DeleteFolder(fid, self.TrashFileCallback)
                                 except NameError as ne:
-                                    self.SendlToLog("RunSyncSincePageToken - NameError %s" % ne)
-                                else:
+                                    self.SendlToLog(3, "RunSyncSincePageToken - Folder %s doesn't exist in local cache" % folder_path)
+                                except:
                                     self.SendlToLog(3, "RunSyncSincePageToken - unknown error in deleting folder from drive tree cache")
                                     pass
                                 self.SendlToLog(3, "RunSyncSincePageToken - Directory %s deleted on remote. Not present locally." % finpath)
@@ -1703,7 +1832,7 @@ class GoSyncModel(object):
                                 else:
                                     self.SendlToLog(3, "RunSyncSincePageToken - Directory %s already exists. Not creating" % finpath)
                             else:
-                                self.SendlToLog(3, "RunSyncSincePageToken - New folder %s on remote but auto add setting is disabled and sync all is disabled. Not creating" % folder_path)
+                                self.SendlToLog(3, "RunSyncSincePageToken - New folder %s on remote but its not on sync list." % folder_path)
                             self.SendlToLog(3, "RunSyncSincePageToken - Adding new found folder %s to drive cache" % finpath)
                             parent = fdata.get('parents')[0]
                             self.SendlToLog(3, "RunSyncSincePageToken - Parent: %s Root: %s" % (parent, self.root_id))
@@ -1879,6 +2008,14 @@ class GoSyncModel(object):
                 try:
                     self.SendlToLog(2, "SyncThread - run - Syncing from token %s" % self.last_page_token)
                     self.last_page_token = self.RunSyncSincePageToken(self.last_page_token)
+                    #self.SendlToLog(2, "SyncThread - run - Syncing new selections (if any)")
+                    #try:
+                    #    self.SyncNewSelections()
+                    #except:
+                    #    self.SynclToLog(1, "SyncThread -run - New sync selection failed. Will be tried in next sync cycle")
+                    #    pass
+                    #else:
+                    #    self.SendlToLog(2, "SyncThread - run - SUCCESS")
                     self.SendlToLog(2, "SyncThread - run - Syncing local folders")
                     self.SyncLocalDirectory()
                     self.SendlToLog(2, "SyncThread - run - All sync done successfully")
@@ -2121,6 +2258,9 @@ class GoSyncModel(object):
                 if d[0] == folder.GetPath() and d[1] == folder.GetId():
                     return
             self.sync_selection.append([folder.GetPath(), folder.GetId()])
+
+        # not a good way but
+        self.force_full_sync = True
         self.config_dict['Sync Selection'] = self.sync_selection
         self.SaveConfig()
 
