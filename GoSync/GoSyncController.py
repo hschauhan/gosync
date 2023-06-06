@@ -108,7 +108,7 @@ class PageAccount(wx.Panel):
 
 class GoSyncController(wx.Frame):
     def __init__(self):
-        wx.Frame.__init__(self, None, title="GoSync", size=(490,500), style=mainWindowStyle)
+        wx.Frame.__init__(self, None, title="GoSync", size=(490,700), style=mainWindowStyle)
 
         try:
             self.sync_model = GoSyncModel()
